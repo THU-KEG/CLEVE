@@ -151,14 +151,14 @@ git clone https://github.com/jflanigan/jamr.git
 git checkout Semeval-2016
 ```
 
-JAMR requires sbt 0.13.18. If you do not have it (you can use ```sbt about``` to check), you need to install it via:
+JAMR requires sbt 0.13.18. If you do not have it, you need to install it via:
 
 ```
 wget https://github.com/sbt/sbt/releases/download/v0.13.18/sbt-0.13.18.tgz
 tar zxvf sbt-0.13.18.tgz
 ```
 
-and then add it to your ```$PATH```. Next you could run following commands to set up JAMR:
+and then add it to your ```$PATH``` and use ```sbt about``` to check. Next you could run following commands to set up JAMR:
 
 ```shell
 bash ./setup
@@ -266,7 +266,7 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --per_gpu_eval_batch_size ${BATCH_SIZE} \
     --gradient_accumulation_steps 2 \
     --learning_rate 1e-5 \
-    --num_train_epochs 20 \
+    --num_train_epochs 50 \
     --save_steps 100 \
     --logging_steps 100 \
     --seed 11 \
