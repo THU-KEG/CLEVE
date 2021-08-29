@@ -6,6 +6,8 @@ Source code for ACL 2021 paper "CLEVE: Contrastive Pre-training for Event Extrac
 
 - transformers == 2.5.0
 - pytorch == 1.2.0
+- nltk
+- tqdm
 
 ## Overview
 
@@ -20,38 +22,38 @@ Our pipeline contains four parts.
 
 ### Get dataset
 
-Due to license limitation, we can't release NYT corpus. Please get dataset from [here](https://catalog.ldc.upenn.edu/LDC2008T19). We use ```${NYT_HOME}``` to denote the folder of NYT corpus.
+Due to the license limitation, we cannot release the New York Times Annotated Corpus used in our pre-training or provide the preprocessed files here. Please download the dataset from [here](https://catalog.ldc.upenn.edu/LDC2008T19). We use ```${NYT_HOME}``` to denote the path to the downloaded original NYT corpus.
 
 ### Preprocess
 
-First, we need to prepare a environment with Python 2.7. Then
+First, we need to prepare a Python 2.7 environment. Then:
 
-```shell
+```bash
 git clone https://github.com/notnews/nytimes-corpus-extractor.git
-pip install -r requirements.txt
 cd nytimes-corpus-extractor
+pip install -r requirements.txt
 python nytextract.py ${NYT_HOME}/data
 ```
 
-Then we will get full text of NYT corpus in txt format in ```nytimes-corpus-extractor/text/nyt_corpus/data```. We use ```${NYT_TEXT_HOME}``` to denote this folder in the later description.
+Then we will get full texts of the NYT corpus in `.txt` format in ```nytimes-corpus-extractor/text/nyt_corpus/data```. We use ```${NYT_TEXT_HOME}``` to denote this folder in later sections.
 
 ### Merge
 
-```${NYT_TEXT_HOME}``` has plenty of folders and each folder has many txt files, which is not convinient for later operations. Use
+```${NYTTEXTHOME}``` has plenty of folders and each folder has many `.txt` files, which is not convinient for later operations. Use
 
-```shell
+```bash
 python ${CLEVE_HOME}/AMR/sent_tokenize.py --data_dir ${NYT_TEXT_HOME} --num {NUM}
 ```
 
 (This command needs Python 3.6)
 
-```{NUM}``` means how many sentences in NYT corpus we actully use in our pretraining. ```30000``` would be enough for our task. This command will execute for about 4 hours. Now we have a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
+```${NUM}``` is the number of sentences in NYT we actully use in our pre-training. ```30000``` would be enough for our task. This command will take about 4 hours. Then we will get a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
 
 
 
 ## AMR Parsing
 
-In this section, we will use [CAMR](https://github.com/c-amr/camr)  to parse file ```[input_sentence_file]``` and use [JAMR](https://github.com/jflanigan/jamr) to do alignment. Our goal is to get an AMR file with following format:
+In this section, we will use [CAMR](https://github.com/c-amr/camr)  to parse the file ```[input_sentence_file]``` and  [JAMR](https://github.com/jflanigan/jamr) to do alignment. Our goal is to get an AMR file in the format like the following example:
 
 ```
 # ::id 1
@@ -83,47 +85,47 @@ In this section, we will use [CAMR](https://github.com/c-amr/camr)  to parse fil
 (Other instances....)
 ```
 
-If you can use your own AMR parser to output this file, you can skip this section. We denote this file as ```[nyt_parsed_file]```.
+If you want to use another AMR parser to get this file, you can skip this section but keep the final file in the same format. We denote this file as ```[nyt_parsed_file]```.
 
 ### CAMR
 
 We still need to use Python 2.7 to run CAMR.
 
-```shell
+```bash
 git clone https://github.com/c-amr/camr.git
 pip install nltk==3.4.5
 cd camr
-./scripts/config.sh
+bash ./scripts/config.sh
 ```
 
-nltk version should not be higher than 3.4.5 since 3.4.5 is the latest version that supports Python 2.7. Then please add ```ssplit.eolonly=true``` to  ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise a bug will occur) and set ```VERBOSE``` to ```False``` in ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise the speed will be much lower).
+nltk version should be not higher than `3.4.5` since `3.4.5` is the latest version supporting Python 2.7. Then please add ```ssplit.eolonly=true``` to  ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise a bug will occur) and set ```VERBOSE``` to ```False``` in ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise the speed will be much lower).
 
-CAMR requires JDK 1.8. If you do not have JDK or your JDK version is not 1.8, you may not run CAMR successfully. You can download JDK 1.8 from Oracle and add JDK to you ```$PATH```.
+CAMR requires JDK 1.8. You can download JDK 1.8 from Oracle and add JDK to you environment variable ```$PATH```.
 
-```shell
+```bash
 python amr_parsing.py -m preprocess [input_sentence_file]
 ```
 
-For 30000 sentences, this script will execute for about 8 hours. Now we get tokenized sentences(.tok), pos tag and name entity (.prp) and dependency structure (.charniak.parse.dep). Then Download model file and uncompress it:
+For `30000` sentences, this script will execute for about `8` hours. Now we get tokenized sentences (`.tok`), POS tags and name entities (`.prp`) and dependency structures (`.charniak.parse.dep`). Then download model file and uncompress it:
 
-```shell
+```bash
 wget http://www.cs.brandeis.edu/~cwang24/files/amr-anno-1.0.train.m.tar.gz
 tar zxvf amr-anno-1.0.train.m.tar.gz
 ```
 
 Now we can do parsing:
 
-```shell
+```bash
 python amr_parsing.py -m parse --model [model_file] [input_sentence_file] 2>log/error.log
 ```
 
-Now we get parsed AMR file (.parsed). Before we do alignment, we need to add tokens to AMR files.
+Now we get parsed AMR file (`.parsed`). Before we do alignment, we need to add tokens to AMR files.
 
-```shell
+```bash
 python amr_parsing.py -m preprocess --amrfmt amr [input_amr_file]
 ```
 
-Now we get a tokenized AMR file (.amr.tok). It should be like:
+Now we get a tokenized AMR file (`.amr.tok`). It should be like:
 
 ```
 # ::id 1
@@ -140,27 +142,25 @@ Now we get a tokenized AMR file (.amr.tok). It should be like:
 (Other instances....)
 ```
 
-
-
 ### JAMR
 
 We still need Python 2.7 to run JAMR. To set up JAMR:
 
-```
+```bash
 git clone https://github.com/jflanigan/jamr.git
 git checkout Semeval-2016
 ```
 
-JAMR requires sbt 0.13.18. If you do not have it, you need to install it via:
+JAMR requires `sbt == 0.13.18`. If you do not have it, you need to install it via:
 
-```
+```bash
 wget https://github.com/sbt/sbt/releases/download/v0.13.18/sbt-0.13.18.tgz
 tar zxvf sbt-0.13.18.tgz
 ```
 
-and then add it to your ```$PATH``` and use ```sbt about``` to check. Next you could run following commands to set up JAMR:
+And then add it to your ```$PATH``` and use ```sbt about``` to check if it is available. Next you could run following commands to set up JAMR:
 
-```shell
+```bash
 bash ./setup
 bash scripts/config.sh
 ./compile
@@ -168,7 +168,7 @@ bash scripts/config.sh
 
 Use this command to do alignment:
 
-```shell
+```bash
 ${JAMR_HOME}/run Aligner -v 0 --print-nodes-and-edges < [input_amr_tok_file] > [nyt_parsed_file]
 ```
 
@@ -182,15 +182,15 @@ If you are running with ACE 2005, please preprocess format same as  [this repo](
 
 ### Pre-training
 
-Now switch to Python 3.6. To get contrastive pretraining data, use:
+Now switch to Python 3.6. To get contrastive pre-training data, use:
 
-```shell
+```bash
 python ${CLEVE_HOME}/AMR/load_AMR.py --amr_file [nyt_parsed_file]
 ```
 
-You will get a file ```contrast_examples.pkl``` that contains pretraining data. Put it into ```${ACE_HOME}```. Then use following command to pretrain model:
+You will get a file ```contrast_examples.pkl``` that contains pretraining data. Put it into ```${ACE_HOME}```. Then use following command to pre-train model:
 
-```shell
+```bash
 CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --data_dir  ${ACE_HOME}\
     --model_type roberta \
@@ -221,9 +221,9 @@ You will get pretained model in ```${MODEL_DUMP_HOME}```. Please change ```${BAT
 
 ## Downstream Usage
 
-### Supervised EE
+### Supervised Event Extraction
 
-To run Event Detection:
+To run event detection:
 
 ```bash
 CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
@@ -248,11 +248,11 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --evaluate_during_training \
 ```
 
-```${TASK_NAME}``` could be ```ace``` or ```maven```. Please change ```${BATCH_SIZE}``` according to your GPU cards.
+```${TASK_NAME}``` could be ```ace``` or ```maven```. Please change ```${BATCH_SIZE}``` according to your GPU memory.
 
-After ED, you will get ```pred.json``` in ```${ED_MODEL_DUMP_HOME}```. To run Event Argument Extraction,  simply put this file to ```${DATA_HOME}``` and run:
+After event detection, you will get a ```pred.json``` file in ```${ED_MODEL_DUMP_HOME}```. To run event argument extraction, put this file to ```${DATA_HOME}``` and run:
 
-```shell
+```bash
 cd EAE
 CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --data_dir ${ACE_HOME} \
@@ -275,6 +275,10 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_test \
     --evaluate_during_training
 ```
+
+The parameters are similar with the event detection part.
+
+
 
 ## Citation
 
