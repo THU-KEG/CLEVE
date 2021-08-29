@@ -119,13 +119,13 @@ Now we can do parsing:
 python amr_parsing.py -m parse --model [model_file] [input_sentence_file] 2>log/error.log
 ```
 
-Now we get parsed AMR file (`.parsed`). Before we do alignment, we need to add tokens to AMR files.
+Now we get parsed AMR file (`.parsed`) (denote as```[input_amr_file]```). Before we do alignment, we need to add tokens to AMR files.
 
 ```bash
 python amr_parsing.py -m preprocess --amrfmt amr [input_amr_file]
 ```
 
-Now we get a tokenized AMR file (`.amr.tok`). It should be like:
+Now we get a tokenized AMR file (`.amr.tok`) (denote as```[input_amr_tok_file]```). It should be like:
 
 ```
 # ::id 1
