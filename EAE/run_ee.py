@@ -1,3 +1,21 @@
+# coding=utf-8
+# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
+# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+""" Finetuning the library models for multiple choice (Bert, Roberta, XLNet)."""
+
+
 import argparse
 import glob
 import logging
@@ -12,7 +30,6 @@ from tqdm import tqdm, trange
 
 from transformers import (
     WEIGHTS_NAME,
-    CONFIG_NAME,
     AdamW,
     BertConfig,
     BertForMultipleChoice,
@@ -20,15 +37,15 @@ from transformers import (
     RobertaConfig,
     RobertaForMultipleChoice,
     RobertaTokenizer,
-    RobertaModel,
+    RobertaModel
     XLNetConfig,
     XLNetForMultipleChoice,
     XLNetTokenizer,
     get_linear_schedule_with_warmup,
 )
-from utils_ee import convert_examples_to_features, processors, convert_contrast_examples_to_features
+from utils_ee import convert_examples_to_features, processors
 from sklearn.metrics import f1_score,precision_score,recall_score
-from model import DMBERT, DMRoBERTa, BERTContrastive, RoBERTaContrastive
+from model import *
 
 #try:
 #    from torch.utils.tensorboard import SummaryWriter
@@ -41,19 +58,62 @@ logger = logging.getLogger(__name__)
 ALL_MODELS = sum(
     (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, RobertaConfig)), ()
 )
+# print(ALL_MODELS)
+# exit(1)
 
 MODEL_CLASSES = {
-    "bert": (BertConfig, DMBERT, BertTokenizer, BERTContrastive),
+    "bert": (BertConfig, DMBERT, BertTokenizer),
     # "xlnet": (XLNetConfig, XLNetForMultipleChoice, XLNetTokenizer),
-    "roberta": (RobertaConfig, RobertaModel, RobertaTokenizer, RobertaModel),
+    "roberta": (RobertaConfig, RobertaModel, RobertaTokenizer),
 }
 
+'''
 def calculate_scores(preds, labels, dimE):
     positive_labels=list(range(1,dimE)) #assume 0 is NA
     pre = precision_score(labels, preds, labels=positive_labels, average='micro')
     recall = recall_score(labels, preds, labels=positive_labels, average='micro')
     f1 = f1_score(labels, preds, labels=positive_labels, average='micro')
     return pre, recall, f1
+'''
+def calculate_scores(preds, labels, pred_types, types):
+    assert len(preds) == len(labels)
+    assert len(pred_types) == len(types)
+    TP=0
+    FP=0
+    TN=0
+    FN=0
+    def is_NA(x,i=1):
+        if isinstance(x,tuple):
+            return 0 in x
+        return x==0
+    for i in range(len(preds)):
+        pred=(pred_types[i],preds[i])
+        golden=(types[i],labels[i])
+        #pred=(preds[i])
+        #golden=(labels[i])
+        if pred==golden and not is_NA(pred):
+            TP+=1
+        elif pred!=golden:
+            #if pred[1]==golden[1] and pred[1]==0:
+            #    continue
+            if is_NA(pred) and not is_NA(golden):
+                FN+=1
+            elif is_NA(golden) and not is_NA(pred):
+                FP+=1
+            elif (not is_NA(golden)) and (not is_NA(pred)):
+                FN+=1
+                FP+=1
+            else:
+                TN+=1
+        else:
+            TN+=1
+    try:
+        P=TP/(TP+FP)
+        R=TP/(TP+FN)
+        F=2*P*R/(P+R)
+    except:
+        P=R=F=0
+    return P,R,F
 
 def set_seed(args):
     random.seed(args.seed)
@@ -63,7 +123,7 @@ def set_seed(args):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, model, tokenizer,):
+def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     #if args.local_rank in [-1, 0]:
         #tb_writer = SummaryWriter()
@@ -127,8 +187,6 @@ def train(args, train_dataset, model, tokenizer,):
     best_dev_f1 = 0.0
     best_steps = 0
     model.zero_grad()
-    best_dev_preds = []
-    best_test_preds = []
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     set_seed(args)  # Added here for reproductibility
     for _ in train_iterator:
@@ -143,8 +201,9 @@ def train(args, train_dataset, model, tokenizer,):
                 if args.model_type in ["bert", "xlnet"]
                 else None,  # XLM don't use segment_ids
                 "maskL": batch[3],
-                "maskR": batch[4],
-                "labels": batch[5],
+                "maskM": batch[4],
+                "maskR": batch[5],
+                "labels": batch[6],
             }
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
@@ -175,16 +234,14 @@ def train(args, train_dataset, model, tokenizer,):
                     if (
                         args.local_rank == -1 and args.evaluate_during_training
                     ):  # Only evaluate when single GPU otherwise metrics may not average well
-                        results, dev_pred_results = evaluate(args, model, tokenizer)
+                        results = evaluate(args, model, tokenizer)
                         #for key, value in results.items():
                             #tb_writer.add_scalar("eval_{}".format(key), value, global_step)
                         if results["eval_f1"] > best_dev_f1:
                             best_dev_f1 = results["eval_f1"]
                             best_steps = global_step
-                            best_dev_preds = dev_pred_results
                             if args.do_test:
-                                results_test,test_pred_results = evaluate(args, model, tokenizer, test=True)
-                                best_test_preds = test_pred_results
+                                results_test = evaluate(args, model, tokenizer, test=True)
                                 #for key, value in results_test.items():
                                     #tb_writer.add_scalar("test_{}".format(key), value, global_step)
                                 logger.info(
@@ -193,16 +250,6 @@ def train(args, train_dataset, model, tokenizer,):
                                     str(results_test["eval_loss"]),
                                     str(global_step),
                                 )
-                                with open(args.output_dir+'/best.txt','w') as f:
-                                    f.write("best F1: {}\n".format(str(results_test["eval_f1"])))
-                                    f.write("best p: {}\n".format(str(results_test["eval_p"])))
-                                    f.write("best recall: {}\n".format(str(results_test["eval_recall"])))
-                                    f.write("best loss: {}\n".format(str(results_test["eval_loss"])))
-                                    f.write("best step: {}\n".format(str(best_steps)))
-                                
-                                with open(args.output_dir+'/pred.json','w') as f:
-                                    json.dump({'dev':best_dev_preds,'test':best_test_preds})
-
                     #tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
                     #tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logger.info(
@@ -217,9 +264,7 @@ def train(args, train_dataset, model, tokenizer,):
                     output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    model_to_save = (
-                        model.module if hasattr(model, "module") else model
-                    )  # Take care of distributed/parallel training
+                    model_to_save = model.module.bert
                     model_to_save.save_pretrained(output_dir)
                     tokenizer.save_vocabulary(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
@@ -237,181 +282,14 @@ def train(args, train_dataset, model, tokenizer,):
 
     return global_step, tr_loss / global_step, best_steps
 
-def pretrain(args, train_dataset, model, tokenizer):
-    """ Train the model """
-    #if args.local_rank in [-1, 0]:
-        #tb_writer = SummaryWriter()
-
-    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
-
-    if args.max_steps > 0:
-        t_total = args.max_steps
-        args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
-    else:
-        t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
-
-    # Prepare optimizer and schedule (linear warmup and decay)
-    no_decay = ["bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
-        },
-        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
-    ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
-    )
-    if args.fp16:
-        try:
-            from apex import amp
-        except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
-
-    # multi-gpu training (should be after apex fp16 initialization)
-    if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-
-    # Distributed training (should be after apex fp16 initialization)
-    if args.local_rank != -1:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True
-        )
-
-    # Train!
-    logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
-    logger.info(
-        "  Total train batch size (w. parallel, distributed & accumulation) = %d",
-        args.train_batch_size
-        * args.gradient_accumulation_steps
-        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1),
-    )
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
-
-    global_step = 0
-    tr_loss, logging_loss = 0.0, 0.0
-    best_dev_f1 = 0.0
-    best_steps = 0
-    min_loss = 100.0
-    model.zero_grad()
-    train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
-    set_seed(args)  # Added here for reproductibility
-    for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        for step, batch in enumerate(epoch_iterator):
-            model.train()
-            batch = tuple(t.to(args.device) for t in batch)
-            inputs = {
-                "input_ids": batch[0],
-                "attention_mask": batch[1],
-                "token_type_ids": batch[2]
-                if args.model_type in ["bert", "xlnet"]
-                else None,  # XLM don't use segment_ids
-                "trigger_mask": batch[3],
-                "arg_mask": batch[4],
-                "none_arg_mask": batch[5],
-                "none_arg_length_mask":batch[6],
-            }
-            outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
-
-            if args.n_gpu > 1:
-                loss = loss.mean()  # mean() to average on multi-gpu parallel training
-            if args.gradient_accumulation_steps > 1:
-                loss = loss / args.gradient_accumulation_steps
-
-            if args.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-                torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-            else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-
-            tr_loss += loss.item()
-            if (step + 1) % args.gradient_accumulation_steps == 0:
-
-                optimizer.step()
-                scheduler.step()  # Update learning rate schedule
-                model.zero_grad()
-                global_step += 1
-
-                if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    # Log metrics
-                    # if (
-                    #     args.local_rank == -1 and args.evaluate_during_training
-                    # ):  # Only evaluate when single GPU otherwise metrics may not average well
-                    #     results = evaluate(args, model, tokenizer)
-                    #     #for key, value in results.items():
-                    #         #tb_writer.add_scalar("eval_{}".format(key), value, global_step)
-                    #     if results["eval_f1"] > best_dev_f1:
-                    #         best_dev_f1 = results["eval_f1"]
-                    #         best_steps = global_step
-                    #         if args.do_test:
-                    #             results_test = evaluate(args, model, tokenizer, test=True)
-                    #             #for key, value in results_test.items():
-                    #                 #tb_writer.add_scalar("test_{}".format(key), value, global_step)
-                    #             logger.info(
-                    #                 "test f1: %s, loss: %s, global steps: %s",
-                    #                 str(results_test["eval_f1"]),
-                    #                 str(results_test["eval_loss"]),
-                    #                 str(global_step),
-                    #             )
-                    #tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    #tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
-                    logger.info(
-                        "Average loss: %s at global step: %s",
-                        str((tr_loss - logging_loss) / args.logging_steps),
-                        str(global_step),
-                    )
-                    logging_loss = tr_loss
-                    if tr_loss/global_step < min_loss:
-                        best_steps = global_step+0
-                        min_loss = tr_loss/global_step
-
-                if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
-                    # Save model checkpoint
-                    output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    model_to_save = model.module.bert
-                    model_to_save.save_pretrained(output_dir)
-                    tokenizer.save_pretrained(output_dir)
-                    torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info("Saving model checkpoint to %s", output_dir)
-
-            if args.max_steps > 0 and global_step > args.max_steps:
-                epoch_iterator.close()
-                break
-        
-       
-        
-        if args.max_steps > 0 and global_step > args.max_steps:
-            train_iterator.close()
-            break
-
-    #if args.local_rank in [-1, 0]:
-        #tb_writer.close()
-
-    return global_step, tr_loss / global_step, best_steps, min_loss
-
 
 def evaluate(args, model, tokenizer, prefix="", test=False):
     eval_task_names = (args.task_name,)
     eval_outputs_dirs = (args.output_dir,)
 
-    pred_results = []
     results = {}
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-        eval_dataset, eval_ids = load_and_cache_examples(args, eval_task, tokenizer, evaluate=not test, test=test)
+        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=not test, test=test)
 
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
@@ -434,10 +312,13 @@ def evaluate(args, model, tokenizer, prefix="", test=False):
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        types= None
+        predTypes = None
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
-
+            pt = batch[7].detach().cpu().numpy()
+            tp = batch[8].detach().cpu().numpy()
             with torch.no_grad():
                 inputs = {
                     "input_ids": batch[0],
@@ -446,14 +327,22 @@ def evaluate(args, model, tokenizer, prefix="", test=False):
                     if args.model_type in ["bert", "xlnet"]
                     else None,  # XLM don't use segment_ids
                     "maskL": batch[3],
-                    "maskR": batch[4],
-                    "labels": batch[5],
+                    "maskM": batch[4],
+                    "maskR": batch[5],
+                    "labels": batch[6],
                 }
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
-
+                
                 eval_loss += tmp_eval_loss.mean().item()
             nb_eval_steps += 1
+            if types is None:
+                types=tp
+                predTypes=pt
+            else:
+                types=np.append(types,tp,axis=0)
+                predTypes=np.append(predTypes,pt,axis=0)
+
             if preds is None:
                 preds = logits.detach().cpu().numpy()
                 out_label_ids = inputs["labels"].detach().cpu().numpy()
@@ -465,8 +354,7 @@ def evaluate(args, model, tokenizer, prefix="", test=False):
         preds = np.argmax(preds, axis=1)
         #print(eval_task)
         #print(processors[eval_task])
-        pred_results.extend(preds.tolist())
-        precision, recall, f1 = calculate_scores(preds, out_label_ids, len(processors[eval_task]().get_labels()))
+        precision, recall, f1 = calculate_scores(preds, out_label_ids, predTypes, types)
         result = {"eval_p": precision, "eval_recall": recall, "eval_f1": f1, "eval_loss": eval_loss}
         results.update(result)
 
@@ -489,60 +377,8 @@ def evaluate(args, model, tokenizer, prefix="", test=False):
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
-        assert len(eval_ids)==len(pred_results)
-    return results, dict(list(zip(eval_ids,pred_results)))
+    return results
 
-def load_and_cache_contrast_examples(args, task, tokenizer):
-    if args.local_rank not in [-1, 0]:
-        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-    processor = processors[task]()
-    # Load data features from cache or dataset file
-    cached_mode = "pretrain_contrast"
-    cached_features_file = os.path.join(
-        args.data_dir,
-        "contrast_cached_{}_{}_{}_{}".format(
-            cached_mode,
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            str(args.max_seq_length),
-            str(task),
-        ),
-    )
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        logger.info("Loading contrast features from cached file %s", cached_features_file)
-        contrast_features = torch.load(cached_features_file)
-    else:
-        logger.info("Creating contrast features from dataset file at %s", args.data_dir)
-
-        contrast_examples = processor.get_contrast_examples(args.data_dir)
-        
-        contrast_features = convert_contrast_examples_to_features(
-            contrast_examples,
-            args.max_seq_length,
-            args.max_contrast_entity_per_sentence,
-            tokenizer,
-            pad_on_left=bool(args.model_type in ["xlnet"]),  # pad on the left for xlnet
-            pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
-        )
-
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_features_file)
-            torch.save(contrast_features, cached_features_file)
-
-    if args.local_rank == 0:
-        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-    # Convert to Tensors and build dataset
-    all_input_ids = torch.tensor([f.input_ids for f in contrast_features], dtype=torch.long)
-    all_input_mask = torch.tensor([f.input_mask for f in contrast_features], dtype=torch.long)
-    all_segment_ids = torch.tensor([f.segment_ids for f in contrast_features], dtype=torch.long)
-    all_trigger_mask = torch.tensor([f.trigger_mask for f in contrast_features], dtype=torch.float)
-    all_arg_mask = torch.tensor([f.arg_mask for f in contrast_features], dtype=torch.float)
-    all_none_arg_mask = torch.tensor([f.none_arg_mask for f in contrast_features], dtype=torch.float)
-    all_none_arg_length_mask = torch.tensor([f.none_arg_length_mask for f in contrast_features], dtype=torch.float)
-
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_trigger_mask, all_arg_mask, all_none_arg_mask, all_none_arg_length_mask)
-    return dataset
 
 def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     if args.local_rank not in [-1, 0]:
@@ -572,6 +408,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
+        type_list = processor.get_eventTypes() 
         if evaluate:
             examples = processor.get_dev_examples(args.data_dir)
         elif test:
@@ -579,10 +416,10 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
         else:
             examples = processor.get_train_examples(args.data_dir)
         logger.info("Training number: %s", str(len(examples)))
-
         features = convert_examples_to_features(
             examples,
             label_list,
+            type_list,
             args.max_seq_length,
             tokenizer,
             pad_on_left=bool(args.model_type in ["xlnet"]),  # pad on the left for xlnet
@@ -600,14 +437,13 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
     all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
     all_maskL = torch.tensor([f.maskL for f in features], dtype=torch.float)
+    all_maskM = torch.tensor([f.maskM for f in features], dtype=torch.float)
     all_maskR = torch.tensor([f.maskR for f in features], dtype=torch.float)
     all_label_ids = torch.tensor([f.label for f in features], dtype=torch.long)
-
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_maskL, all_maskR, all_label_ids)
-    if evaluate or test:
-        return dataset, [f.example_id for f in features]
-    else:
-        return dataset
+    all_types = torch.tensor([f.eventType for f in features], dtype=torch.long)
+    all_predTypes = torch.tensor([f.predType for f in features], dtype=torch.long)
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_maskL, all_maskM, all_maskR, all_label_ids, all_predTypes, all_types)
+    return dataset
 
 
 def main():
@@ -649,15 +485,6 @@ def main():
         required=True,
         help="The output directory where the model predictions and checkpoints will be written.",
     )
-    
-    parser.add_argument(
-        "--max_contrast_entity_per_sentence",
-        default=10,
-        type=int,
-        required=True,
-        help="Max contrast entity per sentence in contrastive pretraining stage.",
-    )
-
 
     # Other parameters
     parser.add_argument(
@@ -683,7 +510,6 @@ def main():
         "than this will be truncated, sequences shorter will be padded.",
     )
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
-    parser.add_argument("--do_pretrain", action="store_true", help="Whether to pretrain using MI.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.")
     parser.add_argument("--do_test", action="store_true", help="Whether to run test on the test set")
     parser.add_argument(
@@ -697,21 +523,6 @@ def main():
     parser.add_argument(
         "--per_gpu_eval_batch_size", default=8, type=int, help="Batch size per GPU/CPU for evaluation."
     )
-    
-    parser.add_argument("--per_gpu_positive_batch_size",default=1,type=int,help="Batch size per GPU/CPU for positive pretrain")
-    parser.add_argument("--per_gpu_negativex_batch_size",default=3,type=int,help="Batch size per GPU/CPU for negativex pretrain")
-    parser.add_argument("--per_gpu_negativey_batch_size",default=3,type=int,help="Batch size per GPU/CPU for negativey pretrain")
-    parser.add_argument(
-        "--num_pretrain_epochs", default=3.0, type=float, help="Total number of pretraining epochs to perform."
-    )
-    parser.add_argument(
-        "--positive_max_steps",
-        default=-1,
-        type=int,
-        help="If > 0: set total number of pretraining steps to perform. Override num_pretrain_epochs.",
-    )
-
-    
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
@@ -725,9 +536,6 @@ def main():
     parser.add_argument(
         "--num_train_epochs", default=3.0, type=float, help="Total number of training epochs to perform."
     )
-
-
-
     parser.add_argument(
         "--max_steps",
         default=-1,
@@ -832,7 +640,7 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     args.model_type = args.model_type.lower()
-    config_class, model_class, tokenizer_class, contrastive_class = MODEL_CLASSES[args.model_type]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     config = config_class.from_pretrained(
         args.config_name if args.config_name else args.model_name_or_path,
         num_labels=num_labels,
@@ -845,38 +653,14 @@ def main():
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
 
-    if args.do_pretrain:
-        if args.model_type=='roberta':
-            model = contrastive_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),#True,
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None
-                )
-            model = RoBERTaContrastive(config,model)
-        else:
-            model = contrastive_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None,
-            )
-    else:
-        if args.model_type=='roberta':
-            model = model_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),#True,
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None
-            )
-            model = DMRoBERTa(config,model)
-        else:
-            model = model_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None,
-            )
+    model = model_class.from_pretrained(
+        args.model_name_or_path,
+        from_tf=bool(".ckpt" in args.model_name_or_path),
+        config=config,
+        cache_dir=args.cache_dir if args.cache_dir else None,
+    )
+    if args.model_type=='roberta':
+        model = DMRoBERTa(config,model)
 
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
@@ -886,18 +670,11 @@ def main():
     logger.info("Training/evaluation parameters %s", args)
     best_steps = 0
 
-    if args.do_pretrain:
-        print("--do pretrain--")
-        pretrain_dataset = load_and_cache_contrast_examples(args, args.task_name, tokenizer)
-        global_step, tr_loss ,best_steps, min_loss = pretrain(args, pretrain_dataset, model, tokenizer)
-        logger.info(" contrast_global_step = %s, contrast_average loss = %s, best_steps = %s, min_loss = %s", global_step, tr_loss, best_steps, min_loss)
-        return
-
-    # Trainingr
+    # Training
     if args.do_train:
         train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
         global_step, tr_loss, best_steps = train(args, train_dataset, model, tokenizer)
-        logger.info(" global_step = %s, average loss = %s, best_steps = %s", global_step, tr_loss, best_steps)
+        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -940,7 +717,7 @@ def main():
 
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
-            result,_ = evaluate(args, model, tokenizer, prefix=prefix)
+            result = evaluate(args, model, tokenizer, prefix=prefix)
             result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
             results.update(result)
 
@@ -958,7 +735,7 @@ def main():
 
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
-            result,_ = evaluate(args, model, tokenizer, prefix=prefix, test=True)
+            result = evaluate(args, model, tokenizer, prefix=prefix, test=True)
             result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
             results.update(result)
     if best_steps:

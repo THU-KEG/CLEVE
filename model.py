@@ -10,14 +10,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class BERTContrastive(BertPreTrainedModel):
     def __init__(self,config):
         super().__init__(config)
-        self.model = BertModel(config)
+        self.bert = BertModel(config)
+        self.linear = nn.Linear(config.hidden_size,config.hidden_size)
         self.W = nn.Linear(config.hidden_size,config.hidden_size)
     def forward(self,input_ids=None,attention_mask=None,token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None,trigger_mask=None,arg_mask=None,none_arg_mask=None,none_arg_length_mask=None):
-        outputs =self.model(                 # [bs, length, emd] 
+        outputs =self.bert(                 # [bs, length, emd] 
             input_ids,                      # [batch,length]
             attention_mask=attention_mask,  # padding
             token_type_ids=token_type_ids,  # sentence segmentation
@@ -25,31 +25,46 @@ class BERTContrastive(BertPreTrainedModel):
             head_mask=head_mask,            # ？
             inputs_embeds=inputs_embeds,    # lookup mat
         )[0]
-
+        assert torch.sum(torch.isnan(outputs))==0
         trigger_mask = torch.unsqueeze(trigger_mask, dim=2)                     #[bs,length, 1]
         trigger_reps = outputs * trigger_mask                                   #[bs,length, emd]
         trigger_reps = torch.sum(trigger_reps,dim=1)                            #[bs, emd]
+        assert torch.sum(torch.isnan(trigger_reps))==0
         trigger_reps = trigger_reps/torch.sum(trigger_mask,dim=1)               #[bs, emd]
+        trigger_reps = self.linear(trigger_reps)
+        trigger_reps = trigger_reps/(torch.norm(trigger_reps,dim=1,keepdim=True)+1e-8)
+
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
         arg_mask = torch.unsqueeze(arg_mask, dim=2)
         arg_reps = outputs * arg_mask
         arg_reps = torch.sum(arg_reps,dim=1)
         arg_reps = arg_reps/torch.sum(arg_mask,dim=1)
+        arg_reps = self.linear(arg_reps)
+        arg_reps = arg_reps/(torch.norm(arg_reps,dim=1,keepdim=True)+1e-8)
+
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
         none_arg_mask = torch.unsqueeze(none_arg_mask, dim=3) #[bs, max_contras_ent, length, 1]
         outputs_un = torch.unsqueeze(outputs,dim=1)           #[bs, 1, length, emd]
         none_arg_reps = outputs_un * none_arg_mask            #[bs, max_contras_ent, length, emd]
         none_arg_reps = torch.sum(none_arg_reps,dim=2)        #[bs, max_contras_ent, emd]
         none_arg_reps = none_arg_reps/(torch.sum(none_arg_mask,dim=2)+1e-8) #[bs, max_contras_ent, emd]
+        none_arg_reps = none_arg_reps/(torch.norm(none_arg_reps,dim=2,keepdim=True)+1e-8)
 
-        pos_loss = torch.sum(self.W(trigger_reps) * arg_reps,dim=1)          #[bs]
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
-        neg_loss_1 = torch.mm(self.W(trigger_reps), torch.transpose(arg_reps,0,1))  #[bs,bs]
+        # pos_loss = torch.sum(self.W(trigger_reps) * arg_reps,dim=1)          #[bs]
+        pos_loss = torch.sum(trigger_reps * arg_reps,dim=1)
+
+        # neg_loss_1 = torch.mm(self.W(trigger_reps), torch.transpose(arg_reps,0,1))  #[bs,bs]
+        neg_loss_1 = torch.mm(trigger_reps, torch.transpose(arg_reps,0,1))
         neg_loss_1 = torch.exp(neg_loss_1)
         neg_loss_1 = torch.sum(neg_loss_1,dim=1)                             #[bs]
 
         trigger_reps = torch.unsqueeze(trigger_reps,dim=1)
-        neg_loss_2 = torch.sum(self.W(trigger_reps) * none_arg_reps, dim=2) #[bs, max_contras_ent]
+        # neg_loss_2 = torch.sum(self.W(trigger_reps) * none_arg_reps, dim=2) #[bs, max_contras_ent]
+        neg_loss_2 = torch.sum(trigger_reps * none_arg_reps, dim=2)
         neg_loss_2 = torch.exp(neg_loss_2) * none_arg_length_mask
         neg_loss_2 = torch.sum(neg_loss_2,dim=1)                            #[bs]
 
@@ -102,12 +117,13 @@ class DMBERT(BertPreTrainedModel):
         return outputs
 
 
-class DMRoBERTa(PreTrainedModel):
-    def __init__(self,config):
+
+class DMRoBERTa(BertPreTrainedModel):
+    def __init__(self,config,bert):
         super().__init__(config)
-        self.bert=RobertaModel(config)
+        self.bert=bert
         self.dropout=nn.Dropout(config.hidden_dropout_prob)
-        self.maxpooling=nn.MaxPool1d(128) 
+        self.maxpooling=nn.MaxPool1d(128) #???????
         self.classifier=nn.Linear(config.hidden_size*2,config.num_labels)
         self.W = nn.Linear(config.hidden_size,config.hidden_size)
     
@@ -144,14 +160,14 @@ class DMRoBERTa(PreTrainedModel):
             outputs=(loss,)+outputs
         return outputs
 
-
-class RoBERTaContrastive(PreTrainedModel):
-    def __init__(self,config):
+class RoBERTaContrastive(BertPreTrainedModel):
+    def __init__(self,config,bert):
         super().__init__(config)
-        self.model = RobertaModel(config)
+        self.bert = bert
+        self.linear = nn.Linear(config.hidden_size,config.hidden_size)
         self.W = nn.Linear(config.hidden_size,config.hidden_size)
     def forward(self,input_ids=None,attention_mask=None,token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None,trigger_mask=None,arg_mask=None,none_arg_mask=None,none_arg_length_mask=None):
-        outputs =self.model(                 # [bs, length, emd] 
+        outputs =self.bert(                 # [bs, length, emd] 
             input_ids,                      # [batch,length]
             attention_mask=attention_mask,  # padding
             token_type_ids=token_type_ids,  # sentence segmentation
@@ -159,31 +175,46 @@ class RoBERTaContrastive(PreTrainedModel):
             head_mask=head_mask,            # ？
             inputs_embeds=inputs_embeds,    # lookup mat
         )[0]
-
+        assert torch.sum(torch.isnan(outputs))==0
         trigger_mask = torch.unsqueeze(trigger_mask, dim=2)                     #[bs,length, 1]
         trigger_reps = outputs * trigger_mask                                   #[bs,length, emd]
         trigger_reps = torch.sum(trigger_reps,dim=1)                            #[bs, emd]
+        assert torch.sum(torch.isnan(trigger_reps))==0
         trigger_reps = trigger_reps/torch.sum(trigger_mask,dim=1)               #[bs, emd]
+        trigger_reps = self.linear(trigger_reps)
+        trigger_reps = trigger_reps/(torch.norm(trigger_reps,dim=1,keepdim=True)+1e-8)
+
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
         arg_mask = torch.unsqueeze(arg_mask, dim=2)
         arg_reps = outputs * arg_mask
         arg_reps = torch.sum(arg_reps,dim=1)
         arg_reps = arg_reps/torch.sum(arg_mask,dim=1)
+        arg_reps = self.linear(arg_reps)
+        arg_reps = arg_reps/(torch.norm(arg_reps,dim=1,keepdim=True)+1e-8)
+
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
         none_arg_mask = torch.unsqueeze(none_arg_mask, dim=3) #[bs, max_contras_ent, length, 1]
         outputs_un = torch.unsqueeze(outputs,dim=1)           #[bs, 1, length, emd]
         none_arg_reps = outputs_un * none_arg_mask            #[bs, max_contras_ent, length, emd]
         none_arg_reps = torch.sum(none_arg_reps,dim=2)        #[bs, max_contras_ent, emd]
         none_arg_reps = none_arg_reps/(torch.sum(none_arg_mask,dim=2)+1e-8) #[bs, max_contras_ent, emd]
+        none_arg_reps = none_arg_reps/(torch.norm(none_arg_reps,dim=2,keepdim=True)+1e-8)
 
-        pos_loss = torch.sum(self.W(trigger_reps) * arg_reps,dim=1)          #[bs]
+        assert torch.sum(torch.isnan(trigger_reps))==0
 
-        neg_loss_1 = torch.mm(self.W(trigger_reps), torch.transpose(arg_reps,0,1))  #[bs,bs]
+        # pos_loss = torch.sum(self.W(trigger_reps) * arg_reps,dim=1)          #[bs]
+        pos_loss = torch.sum(trigger_reps * arg_reps,dim=1)
+
+        # neg_loss_1 = torch.mm(self.W(trigger_reps), torch.transpose(arg_reps,0,1))  #[bs,bs]
+        neg_loss_1 = torch.mm(trigger_reps, torch.transpose(arg_reps,0,1))
         neg_loss_1 = torch.exp(neg_loss_1)
         neg_loss_1 = torch.sum(neg_loss_1,dim=1)                             #[bs]
 
         trigger_reps = torch.unsqueeze(trigger_reps,dim=1)
-        neg_loss_2 = torch.sum(self.W(trigger_reps) * none_arg_reps, dim=2) #[bs, max_contras_ent]
+        # neg_loss_2 = torch.sum(self.W(trigger_reps) * none_arg_reps, dim=2) #[bs, max_contras_ent]
+        neg_loss_2 = torch.sum(trigger_reps * none_arg_reps, dim=2)
         neg_loss_2 = torch.exp(neg_loss_2) * none_arg_length_mask
         neg_loss_2 = torch.sum(neg_loss_2,dim=1)                            #[bs]
 
@@ -191,4 +222,3 @@ class RoBERTaContrastive(PreTrainedModel):
 
         loss = torch.mean(loss)
         return (loss,)
-

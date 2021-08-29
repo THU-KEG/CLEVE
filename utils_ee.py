@@ -12,6 +12,8 @@ import torch
 import random
 from collections import defaultdict
 
+import pickle
+
 from transformers.file_utils import add_start_docstrings_to_callable
 logger = logging.getLogger(__name__)
 
@@ -129,13 +131,50 @@ class ACEProcessor(DataProcessor):
 
     def get_contrast_examples(self,data_dir):
         logger.info("LOOKING AT {} train contrast".format(data_dir))
-        lines = json.load(open(os.path.join(data_dir,'train.json'),"r"))
+        lines = pickle.load(open(os.path.join(data_dir,'contrast_examples.pkl'),"rb"))
         pos_meta, neg_meta = self.get_contrast_meta(lines)
         return self._create_contrast_examples(lines, pos_meta, neg_meta, "train-contrast")
 
     def get_labels(self):
         """See base class."""
         return ['None', 'End-Position', 'Charge-Indict', 'Convict', 'Transfer-Ownership', 'Demonstrate', 'Transport', 'Sentence', 'Appeal', 'Start-Org', 'Start-Position', 'End-Org', 'Phone-Write', 'Nominate', 'Marry', 'Pardon', 'Release-Parole', 'Meet', 'Trial-Hearing', 'Extradite', 'Execute', 'Transfer-Money', 'Elect', 'Injure', 'Acquit', 'Divorce', 'Die', 'Arrest-Jail', 'Declare-Bankruptcy', 'Be-Born', 'Merge-Org', 'Fine', 'Sue', 'Attack']
+
+    # def get_contrast_meta(self,lines):
+    #     """
+    #     Get meta data for contrastive learning
+        
+    #     """
+    #     positive_meta = {}
+    #     negative_meta = {}
+    #     # trigger_meta = defaultdict(list)
+    #     # line_idx = {}
+    #     for example in lines:
+    #         if example['event_type']!="None":
+    #             metainfo = (example['start'],example['end'],example['file'],example['dir'])
+    #             if metainfo not in positive_meta:
+                    
+    #                 positive_meta[metainfo] = [defaultdict(list),defaultdict(list)]
+    #                 negative_meta[metainfo] = [defaultdict(list),defaultdict(list),[]]
+
+
+    #             trigger_idx = example['trigger_start']
+    #             entities = example['entities']
+    #             role_idxs = [(e['idx_start'],e['idx_end']) for e in entities if e['role'] != 'None']
+    #             none_role_idxs = [(e['idx_start'],e['idx_end']) for e in entities if e['role'] == 'None']
+                
+    #             # trigger_meta[metainfo].append(trigger_idx)
+
+    #             assert trigger_idx not in positive_meta[metainfo][0]
+    #             assert trigger_idx not in negative_meta[metainfo][0]
+    #             positive_meta[metainfo][0][trigger_idx].extend(role_idxs)       
+    #             negative_meta[metainfo][0][trigger_idx].extend(none_role_idxs)
+    #             for role_idx in role_idxs:
+    #                 positive_meta[metainfo][1][role_idx].append(trigger_idx)
+    #             for none_role_idx in none_role_idxs:
+    #                 negative_meta[metainfo][1][none_role_idx].append(trigger_idx)
+    #             negative_meta[metainfo][2] = role_idxs+none_role_idxs
+
+    #     return positive_meta,negative_meta
 
     def get_contrast_meta(self,lines):
         """
@@ -146,21 +185,20 @@ class ACEProcessor(DataProcessor):
         negative_meta = {}
         # trigger_meta = defaultdict(list)
         # line_idx = {}
-        for example in lines:
-            if example['event_type']!="None":
-                metainfo = (example['start'],example['end'],example['file'],example['dir'])
-                if metainfo not in positive_meta:
-                    
-                    positive_meta[metainfo] = [defaultdict(list),defaultdict(list)]
-                    negative_meta[metainfo] = [defaultdict(list),defaultdict(list),[]]
-
-
-                trigger_idx = example['trigger_start']
-                entities = example['entities']
-                role_idxs = [(e['idx_start'],e['idx_end']) for e in entities if e['role'] != 'None']
-                none_role_idxs = [(e['idx_start'],e['idx_end']) for e in entities if e['role'] == 'None']
+        for example_idx, example in enumerate(lines):
+            
+            metainfo = example_idx
+            if metainfo not in positive_meta:
                 
-                # trigger_meta[metainfo].append(trigger_idx)
+                positive_meta[metainfo] = [defaultdict(list),defaultdict(list)]
+                negative_meta[metainfo] = [defaultdict(list),defaultdict(list),[]]
+
+            for node in example['positive_edges'].keys():
+                trigger_idx = (node[0],node[1]-1)                                                       #TODO: this part can be more cleaner
+                entities = example['positive_edges'][node] + example['negative_edges'][node]
+                entities = [(e[0],e[1]-1) for e in entities]
+                role_idxs = [(e[0],e[1]-1) for e in example['positive_edges'][node]]
+                none_role_idxs = [(e[0],e[1]-1) for e in example['negative_edges'][node]]
 
                 assert trigger_idx not in positive_meta[metainfo][0]
                 assert trigger_idx not in negative_meta[metainfo][0]
@@ -174,6 +212,33 @@ class ACEProcessor(DataProcessor):
 
         return positive_meta,negative_meta
 
+
+    # def _create_contrast_examples(self,lines,pos_meta, neg_meta, set_type):
+    #     """
+    #     Create examples for contrastive training
+    #     """
+
+    #     examples = []
+    #     for (idx, data_raw) in enumerate(lines):
+    #         if data_raw['event_type']!="None":
+    #             metainfo = (data_raw['start'],data_raw['end'],data_raw['file'],data_raw['dir'])
+    #             for idx2, entity in enumerate(data_raw['entities']):
+    #                 if entity['role']!="None":
+    #                     e_id = "%s-%s-%s" % (set_type, idx,idx2)
+    #                     examples.append(
+    #                         InputContrastExample(
+    #                             example_id=e_id,
+    #                             tokens=data_raw['tokens'],
+    #                             triggerL=data_raw['trigger_start'],
+    #                             triggerR=data_raw['trigger_end'],
+    #                             argL=entity['idx_start'],
+    #                             argR=entity['idx_end'],
+    #                             neg_meta_t = neg_meta[metainfo][0][data_raw['trigger_start']],
+    #                             neg_meta_a_t= neg_meta[metainfo][1][(entity['idx_start'],entity['idx_end'])],
+    #                             neg_meta_a_a = [e for e in neg_meta[metainfo][2]]
+    #                         )
+    #                     )
+    #     return examples
     def _create_contrast_examples(self,lines,pos_meta, neg_meta, set_type):
         """
         Create examples for contrastive training
@@ -181,24 +246,24 @@ class ACEProcessor(DataProcessor):
 
         examples = []
         for (idx, data_raw) in enumerate(lines):
-            if data_raw['event_type']!="None":
-                metainfo = (data_raw['start'],data_raw['end'],data_raw['file'],data_raw['dir'])
-                for idx2, entity in enumerate(data_raw['entities']):
-                    if entity['role']!="None":
-                        e_id = "%s-%s-%s" % (set_type, idx,idx2)
-                        examples.append(
-                            InputContrastExample(
-                                example_id=e_id,
-                                tokens=data_raw['tokens'],
-                                triggerL=data_raw['trigger_start'],
-                                triggerR=data_raw['trigger_end'],
-                                argL=entity['idx_start'],
-                                argR=entity['idx_end'],
-                                neg_meta_t = neg_meta[metainfo][0][data_raw['trigger_start']],
-                                neg_meta_a_t= neg_meta[metainfo][1][(entity['idx_start'],entity['idx_end'])],
-                                neg_meta_a_a = [e for e in neg_meta[metainfo][2]]
-                            )
+            
+            metainfo = idx
+            for idx_t, t in enumerate(list(data_raw['positive_edges'].keys())):
+                for idx2, entity in enumerate(data_raw['positive_edges'][t]):
+                    e_id = "%s-%s-%s-%s" % (set_type, idx, idx_t, idx2)
+                    examples.append(
+                        InputContrastExample(
+                            example_id=e_id,
+                            tokens=data_raw['tokens'],
+                            triggerL=t[0],
+                            triggerR=t[1]-1,
+                            argL=entity[0],
+                            argR=entity[1]-1,
+                            neg_meta_t = neg_meta[metainfo][0][(t[0],t[1]-1)],
+                            neg_meta_a_t= neg_meta[metainfo][1][(entity[0],entity[1]-1)],
+                            neg_meta_a_a = [e for e in neg_meta[metainfo][2]]
                         )
+                    )
         return examples
                          
 
@@ -216,6 +281,62 @@ class ACEProcessor(DataProcessor):
                     label=data_raw['event_type'],
                 )
             )
+        return examples
+
+class MAVENProcessor(DataProcessor):
+    """Processor for the MAVEN data set."""
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {} train".format(data_dir))
+        return self._create_examples(open(os.path.join(data_dir,'train.jsonl'),"r"), "train")
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {} dev".format(data_dir))
+        return self._create_examples(open(os.path.join(data_dir,'valid.jsonl'),"r"), "dev")
+
+    def get_test_examples(self, data_dir):
+        """See base class."""
+        logger.info("LOOKING AT {} test".format(data_dir))
+        return self._create_examples(open(os.path.join(data_dir,'test.jsonl'),"r"), "test")
+
+    def get_labels(self):
+        """See base class."""
+        return ['None','Change_tool', 'Becoming', 'Using', 'Change_of_leadership', 'Come_together', 'Justifying', 'Name_conferral', 'Collaboration', 'Filling', 'Prison', 'Giving', 'Cause_change_of_position_on_a_scale', 'Limiting', 'Bringing', 'Conquering', 'Forming_relationships', 'Self_motion', 'Commitment', 'Achieve', 'Attack', 'Create_artwork', 'Employment', 'Motion', 'Testing', 'Traveling', 'Preventing_or_letting', 'GiveUp', 'Response', 'Manufacturing', 'Commerce_sell', 'Check', 'Getting', 'Imposing_obligation', 'Earnings_and_losses', 'Assistance', 'Surrounding', 'Resolve_problem', 'Escaping', 'Ratification', 'Presence', 'Warning', 'Exchange', 'Renting', 'Suspicion', 'Agree_or_refuse_to_act', 'Expansion', 'Openness', 'Having_or_lacking_access', 'Recovering', 'Reveal_secret', 'Perception_active', 'Committing_crime', 'Aiming', 'Wearing', 'Creating', 'Writing', 'Hold', 'Education_teaching', 'Incident', 'Quarreling', 'Supply', 'Change', 'Telling', 'Hindering', 'Rewards_and_punishments', 'Protest', 'Know', 'Extradition', 'Departing', 'Sign_agreement', 'Adducing', 'Control', 'Body_movement', 'Releasing', 'Hiding_objects', 'Kidnapping', 'Carry_goods', 'Participation', 'Arrest', 'Sending', 'Reporting', 'Theft', 'Change_sentiment', 'Convincing', 'Preserving', 'Causation', 'Breathing', 'Vocalizations', 'Criminal_investigation', 'Influence', 'Bearing_arms', 'Practice', 'Violence', 'Deciding', 'Being_in_operation', 'Rescuing', 'Temporary_stay', 'Reforming_a_system', 'Catastrophe', 'Besieging', 'Arranging', 'Risk', 'Cause_to_be_included', 'Legal_rulings', 'Confronting_problem', 'Communication', 'Process_start', 'Cure', 'Dispersal', 'Cause_to_amalgamate', 'Institutionalization', 'Competition', 'Killing', 'Submitting_documents', 'Supporting', 'Death', 'Surrendering', 'Recording', 'Revenge', 'Change_event_time', 'Connect', 'Use_firearm', 'Coming_to_be', 'Cause_change_of_strength', 'Ingestion', 'Legality', 'Research', 'Action', 'Award', 'Defending', 'Scrutiny', 'Placing', 'Rite', 'Request', 'Terrorism', 'Process_end', 'Becoming_a_member', 'Expend_resource', 'Commerce_pay', 'Cost', 'Bodily_harm', 'Hostile_encounter', 'GetReady', 'Judgment_communication', 'Containing', 'Robbery', 'Receiving', 'Choosing', 'Lighting', 'Commerce_buy', 'Coming_to_believe', 'Destroying', 'Emptying', 'Building', 'Patrolling', 'Scouring', 'Statement', 'Arriving', 'Social_event', 'Cause_to_make_progress', 'Motion_directional', 'Emergency', 'Labeling', 'Publishing', 'Expressing_publicly', 'Military_operation', 'Removing', 'Damaging']
+
+    def _create_examples(self, fin, set_type):
+        """Creates examples for the training and dev sets."""
+        examples = []
+        lines=fin.readlines()
+        for (_, data_raw) in enumerate(lines):
+            data=json.loads(data_raw)
+            for event in data['events']:
+                if event['type']=='None of the above':   # This should never happen
+                    continue
+                for mention in event['mention']:
+                    e_id = "%s-%s" % (set_type, mention['id'])
+                    examples.append(
+                        InputExample(
+                            example_id=e_id,
+                            tokens=data['content'][mention['sent_id']]['tokens'],
+                            triggerL=mention['offset'][0],
+                            triggerR=mention['offset'][1],
+                            label=event['type'],
+                        )
+                    )
+            for nIns in data['negative_triggers']:
+                e_id = "%s-%s" % (set_type, nIns['id'])
+                examples.append(
+                    InputExample(
+                        example_id=e_id,
+                        tokens=data['content'][nIns['sent_id']]['tokens'],
+                        triggerL=nIns['offset'][0],
+                        triggerR=nIns['offset'][1],
+                        label='None',
+                    )
+                )
+
         return examples
 
 
@@ -399,8 +520,7 @@ def convert_examples_to_features(
 
     return features
 
+processors = {"ace": ACEProcessor, "maven": MAVENProcessor}
 
-processors = {"ace": ACEProcessor}
 
-
-MULTIPLE_CHOICE_TASKS_NUM_LABELS = {"ace", 34}
+MULTIPLE_CHOICE_TASKS_NUM_LABELS = {"ace", 34, "maven", 169}
