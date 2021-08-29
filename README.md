@@ -51,7 +51,7 @@ python ${CLEVE_HOME}/AMR/sent_tokenize.py --data_dir ${NYT_TEXT_HOME} --num {NUM
 
 ## AMR Parsing
 
-In this section, we will use [CAMR](https://github.com/c-amr/camr)  to parse file ```[input_sentence_file]``` and use and [JAMR](https://github.com/jflanigan/jamr) to do alignment. Our goal is to get an AMR file with following format:
+In this section, we will use [CAMR](https://github.com/c-amr/camr)  to parse file ```[input_sentence_file]``` and use [JAMR](https://github.com/jflanigan/jamr) to do alignment. Our goal is to get an AMR file with following format:
 
 ```
 # ::id 1
@@ -87,7 +87,7 @@ If you can use your own AMR parser to output this file, you can skip this sectio
 
 ### CAMR
 
-We still need to use python 2.7 to run CAMR.
+We still need to use Python 2.7 to run CAMR.
 
 ```shell
 git clone https://github.com/c-amr/camr.git
@@ -96,7 +96,7 @@ cd camr
 ./scripts/config.sh
 ```
 
-nltk version should not be higher 3.4.5 since 3.4.5 is the latest version that support python2.7. Then please add ```ssplit.eolonly=true``` to  ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise a bug will occur)and set ```VERBOSE``` to ```False``` in ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise the speed will be much lower).
+nltk version should not be higher than 3.4.5 since 3.4.5 is the latest version that supports Python 2.7. Then please add ```ssplit.eolonly=true``` to  ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise a bug will occur) and set ```VERBOSE``` to ```False``` in ```${CAMR_HOME}/stanfordnlp/default.properties``` (Otherwise the speed will be much lower).
 
 CAMR requires JDK 1.8. If you do not have JDK or your JDK version is not 1.8, you may not run CAMR successfully. You can download JDK 1.8 from Oracle and add JDK to you ```$PATH```.
 
@@ -275,10 +275,6 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_test \
     --evaluate_during_training
 ```
-
-### Unsupervised EE
-
-Coming soon.
 
 ## Citation
 
