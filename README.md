@@ -18,7 +18,7 @@ Our pipeline contains four parts.
 - Pre-training
 - Downstream Usage
 
-If you don't want to pre-train by yourself, you can use our released pre-trained roberta-large checkpoint and skip to ```Downstream Usage```. You can download checkpoint from [Google Drive](https://drive.google.com/file/d/1i2R2_XyD47TphVavqU2rKQB0pjNRL3l4/view?usp=sharing), [Baidu Cloud](https://pan.baidu.com/s/1_fVg0Eeyigoxq72BohDxdA) (Extraction Code: d5b2).
+If you don't want to pre-train by yourself, you can use our pre-trained checkpoint (based on roberta-large) and skip to ```Downstream Usage```. You can download the checkpoint from [Google Drive](https://drive.google.com/file/d/1i2R2_XyD47TphVavqU2rKQB0pjNRL3l4/view?usp=sharing), [Baidu Cloud](https://pan.baidu.com/s/1_fVg0Eeyigoxq72BohDxdA) (Extraction Code: d5b2) and [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/f/c92baf57fce24508ab73/?dl=1).
 
 ## NYT Preprocessing
 
