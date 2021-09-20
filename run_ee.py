@@ -4,6 +4,9 @@ import logging
 import os
 import random
 
+import json
+import pickle
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
@@ -201,7 +204,7 @@ def train(args, train_dataset, model, tokenizer,):
                                     f.write("best step: {}\n".format(str(best_steps)))
                                 
                                 with open(args.output_dir+'/pred.json','w') as f:
-                                    json.dump({'dev':best_dev_preds,'test':best_test_preds})
+                                    json.dump({'dev':best_dev_preds,'test':best_test_preds},f)
 
                     #tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
                     #tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)

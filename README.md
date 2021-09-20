@@ -18,6 +18,8 @@ Our pipeline contains four parts.
 - Pre-training
 - Downstream Usage
 
+If you don't want to pre-train by yourself, you can use our released pre-trained roberta-large checkpoint and skip to ```Downstream Usage```. You can download checkpoint from [Google Drive](https://drive.google.com/file/d/1i2R2_XyD47TphVavqU2rKQB0pjNRL3l4/view?usp=sharing).
+
 ## NYT Preprocessing
 
 ### Get dataset
@@ -39,7 +41,7 @@ Then we will get full texts of the NYT corpus in `.txt` format in ```nytimes-cor
 
 ### Merge
 
-```${NYTTEXTHOME}``` has plenty of folders and each folder has many `.txt` files, which is not convinient for later operations. Use
+```${NYT_TEXT_HOME}``` has plenty of folders and each folder has many `.txt` files, which is not convinient for later operations. Use
 
 ```bash
 python ${CLEVE_HOME}/AMR/sent_tokenize.py --data_dir ${NYT_TEXT_HOME} --num {NUM}
@@ -142,6 +144,8 @@ Now we get a tokenized AMR file (`.amr.tok`) (denote as```[input_amr_tok_file]``
 (Other instances....)
 ```
 
+> Sometimes stanford corenlp will throw exceptions when processing some specific sentences, if you encounter sunch situations, simply delete that sentence and repeat steps above. This is a bug in stanford corenlp and we don't know how to fix it.
+
 ### JAMR
 
 We still need Python 2.7 to run JAMR. To set up JAMR:
@@ -236,16 +240,17 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_lower_case \
     --per_gpu_train_batch_size ${BATCH_SIZE} \
     --per_gpu_eval_batch_size ${BATCH_SIZE} \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 5 \
     --learning_rate 1e-5 \
     --num_train_epochs 50 \
-    --save_steps 500 \
-    --logging_steps 50 \
+    --save_steps 100 \
+    --logging_steps 100 \
     --seed 233333 \
     --do_train \
     --do_eval \
     --do_test \
     --evaluate_during_training \
+    --max_contrast_entity_per_sentence 10 \
 ```
 
 ```${TASK_NAME}``` could be ```ace``` or ```maven```. Please change ```${BATCH_SIZE}``` according to your GPU memory.
@@ -264,16 +269,16 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_lower_case \
     --per_gpu_train_batch_size ${BATCH_SIZE} \
     --per_gpu_eval_batch_size ${BATCH_SIZE} \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 1 \
     --learning_rate 1e-5 \
-    --num_train_epochs 50 \
-    --save_steps 100 \
-    --logging_steps 100 \
-    --seed 11 \
+    --num_train_epochs 100 \
+    --save_steps 200 \
+    --logging_steps 200 \
+    --seed 233333 \
     --do_train \
     --do_eval \
     --do_test \
-    --evaluate_during_training
+    --evaluate_during_training \
 ```
 
 The parameters are similar with the event detection part.

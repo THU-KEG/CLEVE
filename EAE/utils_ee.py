@@ -130,7 +130,7 @@ class ACEProcessor(DataProcessor):
             else:
                 pred_e_id = "%s-%s" % (set_type, idx)
                 pred_type = self.get_eventTypes()[pred[pred_e_id]]
-                if pred[pred_e_id]=='None':
+                if pred_type=='None':
                     continue
                 else:
                     data_raw['pred_type'] = pred_type
