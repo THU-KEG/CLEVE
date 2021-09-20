@@ -37,7 +37,7 @@ from transformers import (
     RobertaConfig,
     RobertaForMultipleChoice,
     RobertaTokenizer,
-    RobertaModel
+    RobertaModel,
     XLNetConfig,
     XLNetForMultipleChoice,
     XLNetTokenizer,
