@@ -9,6 +9,8 @@ Source code for ACL 2021 paper "CLEVE: Contrastive Pre-training for Event Extrac
 - nltk
 - tqdm
 
+Note: Test with CUDA 10.0. Higher torch version may occur bugs.
+
 ## Overview
 
 Our pipeline contains four parts.
@@ -271,10 +273,10 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --per_gpu_eval_batch_size ${BATCH_SIZE} \
     --gradient_accumulation_steps 1 \
     --learning_rate 1e-5 \
-    --num_train_epochs 100 \
+    --num_train_epochs 20 \
     --save_steps 200 \
     --logging_steps 200 \
-    --seed 233333 \
+    --seed 110 \
     --do_train \
     --do_eval \
     --do_test \
