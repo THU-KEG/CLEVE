@@ -16,9 +16,9 @@ class Graph():
         abandon_wordidx = []
         proper_noun = re.compile(r'"(\S+)"')
         for node in nodes:
-            node_id2idx[node[0]] = (node[2],node[3])
+            node_id2idx[node[0]] = (int(node[2]),int(node[3]))
             if node[1] in ['and','or','not'] or (proper_noun.match(node[1]) is not None):   # Remove concat words and proper nouns from pretraining
-                abandon_wordidx.append((node[2],node[3]))
+                abandon_wordidx.append((int(node[2]),int(node[3])))
         return node_id2idx,abandon_wordidx
     
     def process_edges(self,raw_edges):

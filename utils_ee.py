@@ -208,7 +208,7 @@ class ACEProcessor(DataProcessor):
                     positive_meta[metainfo][1][role_idx].append(trigger_idx)
                 for none_role_idx in none_role_idxs:
                     negative_meta[metainfo][1][none_role_idx].append(trigger_idx)
-                negative_meta[metainfo][2] = role_idxs+none_role_idxs
+                negative_meta[metainfo][2].extend(role_idxs+none_role_idxs)
 
         return positive_meta,negative_meta
 
@@ -378,7 +378,9 @@ def convert_contrast_examples_to_features(
 
         entities = list(set(example.neg_meta_a_a))
         neg_meta_t = example.neg_meta_t
+
         assert arg_posi in entities, ValueError('Contrast processing seems incorrect, please make sure you follow our guide lines and get a correct [nyt_parsed_file]')
+
 
         if ex_index % 10000 == 0:
             logger.info("Writing contrast example %d of %d" % (ex_index, len(examples)))
