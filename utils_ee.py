@@ -194,7 +194,7 @@ class ACEProcessor(DataProcessor):
                 negative_meta[metainfo] = [defaultdict(list),defaultdict(list),[]]
 
             for node in example['positive_edges'].keys():
-                trigger_idx = (node[0],node[1]-1)                                                       #TODO: this part can be more cleaner
+                trigger_idx = (node[0],node[1]-1)                                                       #TODO: this part can be cleaner
                 entities = example['positive_edges'][node] + example['negative_edges'][node]
                 entities = [(e[0],e[1]-1) for e in entities]
                 role_idxs = [(e[0],e[1]-1) for e in example['positive_edges'][node]]
@@ -378,7 +378,7 @@ def convert_contrast_examples_to_features(
 
         entities = list(set(example.neg_meta_a_a))
         neg_meta_t = example.neg_meta_t
-        assert arg_posi in entities
+        assert arg_posi in entities, ValueError('Contrast processing seems incorrect, please make sure you follow our guide lines and get a correct [nyt_parsed_file]')
 
         if ex_index % 10000 == 0:
             logger.info("Writing contrast example %d of %d" % (ex_index, len(examples)))
@@ -414,26 +414,26 @@ def convert_contrast_examples_to_features(
             attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
             token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
 
-        assert len(input_ids) == max_length
-        assert len(attention_mask) == max_length
-        assert len(token_type_ids) == max_length
+        assert len(input_ids) == max_length, ValueError('sentence length is not correct, this should never happened.')
+        assert len(attention_mask) == max_length, ValueError('sentence length is not correct, this should never happened.')
+        assert len(token_type_ids) == max_length, ValueError('sentence length is not correct, this should never happened.')
 
         trigger_mask = [0]*max_length
         trigger_mask[word_idxs[trigger_posi][0]:word_idxs[trigger_posi][1]] = [1]*(word_idxs[trigger_posi][1]-word_idxs[trigger_posi][0])
         
-        assert sum(trigger_mask)!=0
+        assert sum(trigger_mask)!=0, ValueError('This example should have triggers but we found none trigger after processing. This should never happened.')
 
 
         arg_mask = [0]*max_length
         arg_mask[word_idxs[arg_posi][0]:word_idxs[arg_posi][1]] = [1]*(word_idxs[arg_posi][1]-word_idxs[arg_posi][0])
         
-        assert sum(arg_mask)!=0
+        assert sum(arg_mask)!=0, ValueError('This example should have args but we found none args after processing. This should never happened.')
 
         none_arg = [word_idxs[e] for e in neg_meta_t if word_idxs[e][1]<=max_length][:max_contrast_ent_per_sent]
         none_arg_mask = [[0]*max_length]*max_contrast_ent_per_sent
         for idx,e in enumerate(none_arg):
             none_arg_mask[idx][e[0]:e[1]] = [1]*(e[1]-e[0])
-            assert sum(none_arg_mask[idx])!=0
+            assert sum(none_arg_mask[idx])!=0, ValueError('This example should have entities that are not args but we found less entities that are not args after processing. This should never happened.')
 
         none_arg_length_mask = [1]*len(none_arg) +[0]*(max_contrast_ent_per_sent-len(none_arg))
 

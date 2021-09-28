@@ -588,6 +588,30 @@ def main():
                 args.output_dir
             )
         )
+    
+
+    """
+        Input Error Check
+    """
+
+    assert os.path.exists(args.data_dir), ValueError('data_dir does not exist!')
+    assert args.task_name in ['ace'], ValueError('task_name is not supported, please use ace')
+    check_suffix = 'json'
+    assert 'train.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('train file does not exist!')
+    assert 'dev.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('dev file does not exist!')
+    assert 'test.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('test file does not exist!')
+    assert 'pred.json' in os.listdir(args.data_dir), ValueError('pred.json file does not exist!')
+
+    assert os.path.exists(args.model_name_or_path), ValueError('Model path does not exists!')
+    check_model_files = os.listdir(args.model_name_or_path)
+    assert 'config.json' in check_model_files, ValueError('Model files are not complete! (config.json is missing)')
+    assert 'merges.txt' in check_model_files, ValueError('Model files are not complete! (merges.txt is missing)')
+    assert 'pytorch_model.bin' in check_model_files, ValueError('Model files are not complete! (pytorch_model.bin is missing)')
+    assert 'special_tokens_map.json' in check_model_files, ValueError('Model files are not complete! (special_tokens_map.json is missing)')
+    assert 'tokenizer_config.json' in check_model_files, ValueError('Model files are not complete! (tokenizer_config.json is missing)')
+    assert 'training_args.bin' in check_model_files, ValueError('Model files are not complete! (training_args.bin is missing)')
+    assert 'vocab.json' in check_model_files, ValueError('Model files are not complete! (vocab.json is missing)')
+
 
     # Setup distant debugging if needed
     if args.server_ip and args.server_port:
@@ -661,7 +685,9 @@ def main():
     )
     if args.model_type=='roberta':
         model = DMRoBERTa(config,model)
-
+    else:
+        raise ValueError('model_type should be roberta')
+        
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 

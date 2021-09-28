@@ -51,7 +51,7 @@ python ${CLEVE_HOME}/AMR/sent_tokenize.py --data_dir ${NYT_TEXT_HOME} --num {NUM
 
 (This command needs Python 3.6)
 
-```${NUM}``` is the number of sentences in NYT we actully use in our pre-training. ```30000``` would be enough for our task. This command will take about 4 hours. Then we will get a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
+```${NUM}``` is the number of sentences in NYT we actully use in our pre-training. ```30000``` would be generally enough for our task, but more sentences will make your pretraining stable, and we do not gurantee that randomly selected 30000 sentences can definitely build a good pre-train model. This command will take about 4 hours. Then we will get a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
 
 
 

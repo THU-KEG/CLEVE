@@ -385,7 +385,7 @@ def pretrain(args, train_dataset, model, tokenizer):
                     output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    model_to_save = model.module.bert
+                    model_to_save = model.module.bert if hasattr(model, "module") else model.bert
                     model_to_save.save_pretrained(output_dir)
                     tokenizer.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
@@ -783,6 +783,29 @@ def main():
                 args.output_dir
             )
         )
+    
+
+    """
+        Input Error Check
+    """
+
+    assert os.path.exists(args.data_dir), ValueError('data_dir does not exist!')
+    assert args.task_name in ['ace','maven'], ValueError('task_name is not supported, please use ace or maven')
+    check_suffix = 'json' if args.task_name=='ace' else 'jsonl'
+    assert 'train.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('train file does not exist!')
+    assert 'dev.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('dev file does not exist!')
+    assert 'test.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('test file does not exist!')
+
+    if not args.do_pretrain:
+        assert os.path.exists(args.model_name_or_path), ValueError('Model path does not exists!')
+        check_model_files = os.listdir(args.model_name_or_path)
+        assert 'config.json' in check_model_files, ValueError('Model files are not complete! (config.json is missing)')
+        assert 'merges.txt' in check_model_files, ValueError('Model files are not complete! (merges.txt is missing)')
+        assert 'pytorch_model.bin' in check_model_files, ValueError('Model files are not complete! (pytorch_model.bin is missing)')
+        assert 'special_tokens_map.json' in check_model_files, ValueError('Model files are not complete! (special_tokens_map.json is missing)')
+        assert 'tokenizer_config.json' in check_model_files, ValueError('Model files are not complete! (tokenizer_config.json is missing)')
+        assert 'training_args.bin' in check_model_files, ValueError('Model files are not complete! (training_args.bin is missing)')
+        assert 'vocab.json' in check_model_files, ValueError('Model files are not complete! (vocab.json is missing)')
 
     # Setup distant debugging if needed
     if args.server_ip and args.server_port:
@@ -858,12 +881,7 @@ def main():
                 )
             model = RoBERTaContrastive(config,model)
         else:
-            model = contrastive_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None,
-            )
+            raise ValueError('model_type should be roberta')
     else:
         if args.model_type=='roberta':
             model = model_class.from_pretrained(
@@ -874,12 +892,7 @@ def main():
             )
             model = DMRoBERTa(config,model)
         else:
-            model = model_class.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-                cache_dir=args.cache_dir if args.cache_dir else None,
-            )
+            raise ValueError('model_type should be roberta')
 
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
