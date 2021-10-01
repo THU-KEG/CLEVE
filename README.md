@@ -51,7 +51,7 @@ python ${CLEVE_HOME}/AMR/sent_tokenize.py --data_dir ${NYT_TEXT_HOME} --num {NUM
 
 (This command needs Python 3.6)
 
-```${NUM}``` is the number of sentences in NYT we actully use in our pre-training. ```30000``` would be generally enough for our task, but more sentences will make your pretraining stable, and we do not gurantee that randomly selected 30000 sentences can definitely build a good pre-train model. This command will take about 4 hours. Then we will get a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
+```${NUM}``` is the number of sentences in NYT we actully use in our pre-training. Here we use ```30000``` for example, but more sentences will make your pretraining better (but it will increse preprocessing time). We can not gurantee that using ```30000``` will definitely create a good pre-trained model, but this is a time-friendly option for you to get familiar to our pipelines (We used almost the whole NYT dataset in our experiments and the preprocessing lasts for more than a month!). This command will take about 4 hours. Then we will get a file ```nyt_sent_limit.txt```. It contains one sentence per line. We use ```[input_sentence_file]``` to denote this file.
 
 
 
@@ -184,7 +184,7 @@ ${JAMR_HOME}/run Aligner -v 0 --print-nodes-and-edges < [input_amr_tok_file] > [
 
 ### Dataset
 
-If you are running with ACE 2005, please preprocess format same as  [this repo](https://github.com/thunlp/HMEAE). If you are running with MAVEN, nothing needs to be done. Processed data should be stored in ```${DATA_HOME}``` (```${ACE_HOME}``` or ```${MAVEN_HOME}```)
+Please preprocess ACE 2005 to format same as  [this repo](https://github.com/thunlp/HMEAE). Processed data should be stored in ```${ACE_HOME}```.
 
 ### Pre-training
 
@@ -209,7 +209,7 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --per_gpu_eval_batch_size ${BATCH_SIZE} \
     --gradient_accumulation_steps 1 \
     --learning_rate 1e-5 \
-    --num_train_epochs 100 \
+    --num_train_epochs 10 \
     --save_steps 50 \
     --logging_steps 50 \
     --seed 233333 \
@@ -217,7 +217,7 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_eval \
     --do_test \
     --evaluate_during_training \
-    --max_contrast_entity_per_sentence 10 \
+    --max_contrast_entity_per_sentence 20 \
     --do_pretrain \
 ```
 
@@ -227,16 +227,14 @@ You will get pretained model in ```${MODEL_DUMP_HOME}```. Please change ```${BAT
 
 ## Downstream Usage
 
-### Supervised Event Extraction
-
 To run event detection:
 
 ```bash
 CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
-    --data_dir ${DATA_HOME} \
+    --data_dir ${ACE_HOME} \
     --model_type roberta \
     --model_name_or_path ${MODEL_DUMP_HOME}/checkpoint-XX \
-    --task_name ${TASK_NAME} \
+    --task_name ace \
     --output_dir ${ED_MODEL_DUMP_HOME} \
     --max_seq_length 128 \
     --do_lower_case \
@@ -252,12 +250,12 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
     --do_eval \
     --do_test \
     --evaluate_during_training \
-    --max_contrast_entity_per_sentence 10 \
+    --max_contrast_entity_per_sentence 20 \
 ```
 
-```${TASK_NAME}``` could be ```ace``` or ```maven```. Please change ```${BATCH_SIZE}``` according to your GPU memory.
+Please change ```${BATCH_SIZE}``` according to your GPU memory.
 
-After event detection, you will get a ```pred.json``` file in ```${ED_MODEL_DUMP_HOME}```. To run event argument extraction, put this file to ```${DATA_HOME}``` and run:
+After event detection, you will get a ```pred.json``` file in ```${ED_MODEL_DUMP_HOME}```. To run event argument extraction, put this file to ```${ACE_HOME}``` and run:
 
 ```bash
 cd EAE

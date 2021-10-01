@@ -58,7 +58,7 @@ class InputContrastExample(object):
 
 class InputContrastFeatures(object):
     def __init__(self,example_id,
-                input_ids,input_mask,segment_ids,trigger_mask, arg_mask,none_arg_mask, none_arg_length_mask):
+                input_ids,input_mask,segment_ids,trigger_mask, arg_mask,none_arg_mask, none_arg_length_mask,lm_masked_labels):
         self.example_id = example_id
 
         self.input_ids = input_ids
@@ -68,6 +68,7 @@ class InputContrastFeatures(object):
         self.arg_mask = arg_mask
         self.none_arg_mask=none_arg_mask
         self.none_arg_length_mask = none_arg_length_mask
+        self.lm_masked_labels = lm_masked_labels
     
 
 
@@ -284,7 +285,7 @@ class ACEProcessor(DataProcessor):
         return examples
 
 class MAVENProcessor(DataProcessor):
-    """Processor for the MAVEN data set."""
+    """ DO NOT USE! Have Bugs! Processor for the MAVEN data set."""
 
     def get_train_examples(self, data_dir):
         """See base class."""
@@ -394,14 +395,16 @@ def convert_contrast_examples_to_features(
         inputs = tokenizer.encode_plus(
             text, add_special_tokens=True, max_length=max_length, return_token_type_ids=True
         )
-
+    
         if "num_truncated_tokens" in inputs and inputs["num_truncated_tokens"] > 0:
             logger.info(
                 "Attention! you are cropping tokens."
             )
 
         input_ids, token_type_ids = inputs["input_ids"], inputs["token_type_ids"]
-    
+
+        lm_masked_labels = [-100] + input_ids[1:-1] + [-100]
+
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
         attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
@@ -411,14 +414,17 @@ def convert_contrast_examples_to_features(
             input_ids = ([pad_token] * padding_length) + input_ids
             attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
             token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+            lm_masked_labels = ([-100] * padding_length) + lm_masked_labels
         else:
             input_ids = input_ids + ([pad_token] * padding_length)
             attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
             token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+            lm_masked_labels = lm_masked_labels + ([-100] * padding_length)
 
         assert len(input_ids) == max_length, ValueError('sentence length is not correct, this should never happened.')
         assert len(attention_mask) == max_length, ValueError('sentence length is not correct, this should never happened.')
         assert len(token_type_ids) == max_length, ValueError('sentence length is not correct, this should never happened.')
+        assert len(lm_masked_labels) == max_length, ValueError('sentence length is not correct, this should never happened.')
 
         trigger_mask = [0]*max_length
         trigger_mask[word_idxs[trigger_posi][0]:word_idxs[trigger_posi][1]] = [1]*(word_idxs[trigger_posi][1]-word_idxs[trigger_posi][0])
@@ -439,7 +445,7 @@ def convert_contrast_examples_to_features(
 
         none_arg_length_mask = [1]*len(none_arg) +[0]*(max_contrast_ent_per_sent-len(none_arg))
 
-        features.append(InputContrastFeatures(example_id=example.example_id, input_ids=input_ids, input_mask=attention_mask, segment_ids=token_type_ids, trigger_mask = trigger_mask, arg_mask = arg_mask, none_arg_mask = none_arg_mask, none_arg_length_mask=none_arg_length_mask))
+        features.append(InputContrastFeatures(example_id=example.example_id, input_ids=input_ids, input_mask=attention_mask, segment_ids=token_type_ids, trigger_mask = trigger_mask, arg_mask = arg_mask, none_arg_mask = none_arg_mask, none_arg_length_mask=none_arg_length_mask,lm_masked_labels=lm_masked_labels))
 
     return features
 

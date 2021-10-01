@@ -240,7 +240,7 @@ def train(args, train_dataset, model, tokenizer,):
 
     return global_step, tr_loss / global_step, best_steps
 
-def pretrain(args, train_dataset, model, tokenizer):
+def pretrain(args, train_dataset, model, tokenizer, test_dataset):
     """ Train the model """
     #if args.local_rank in [-1, 0]:
         #tb_writer = SummaryWriter()
@@ -301,9 +301,11 @@ def pretrain(args, train_dataset, model, tokenizer):
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
+    con_tr_loss, con_logging_loss = 0.0, 0.0
+    lm_tr_loss, lm_logging_loss = 0.0, 0.0
     best_dev_f1 = 0.0
+    min_eval_loss = -1
     best_steps = 0
-    min_loss = 100.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     set_seed(args)  # Added here for reproductibility
@@ -322,14 +324,23 @@ def pretrain(args, train_dataset, model, tokenizer):
                 "arg_mask": batch[4],
                 "none_arg_mask": batch[5],
                 "none_arg_length_mask":batch[6],
+                'masked_lm_labels': batch[7],
             }
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            # loss = outputs[0] + outputs[1]  # model outputs are always tuple in transformers (see doc)
+
+            con_loss = outputs[0]
+            lm_loss = outputs[1]
+            loss = con_loss + lm_loss
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
+                con_loss = con_loss.mean()
+                lm_loss = lm_loss.mean()
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
+                con_loss = con_loss / args.gradient_accumulation_steps
+                lm_loss = lm_loss / args.gradient_accumulation_steps
 
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -340,6 +351,8 @@ def pretrain(args, train_dataset, model, tokenizer):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
+            con_tr_loss += con_loss.item()
+            lm_tr_loss += lm_loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
 
                 optimizer.step()
@@ -348,44 +361,35 @@ def pretrain(args, train_dataset, model, tokenizer):
                 global_step += 1
 
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    # Log metrics
-                    # if (
-                    #     args.local_rank == -1 and args.evaluate_during_training
-                    # ):  # Only evaluate when single GPU otherwise metrics may not average well
-                    #     results = evaluate(args, model, tokenizer)
-                    #     #for key, value in results.items():
-                    #         #tb_writer.add_scalar("eval_{}".format(key), value, global_step)
-                    #     if results["eval_f1"] > best_dev_f1:
-                    #         best_dev_f1 = results["eval_f1"]
-                    #         best_steps = global_step
-                    #         if args.do_test:
-                    #             results_test = evaluate(args, model, tokenizer, test=True)
-                    #             #for key, value in results_test.items():
-                    #                 #tb_writer.add_scalar("test_{}".format(key), value, global_step)
-                    #             logger.info(
-                    #                 "test f1: %s, loss: %s, global steps: %s",
-                    #                 str(results_test["eval_f1"]),
-                    #                 str(results_test["eval_loss"]),
-                    #                 str(global_step),
-                    #             )
-                    #tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    #tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+                    
+                    eval_loss = pretrain_evaluate(args,test_dataset,model,tokenizer)
+
                     logger.info(
-                        "Average loss: %s at global step: %s",
+                        "Average loss: %s, con_loss: %s, lm_loss: %s, eval_loss: %s, at global step: %s",
                         str((tr_loss - logging_loss) / args.logging_steps),
+                        str((con_tr_loss - con_logging_loss) / args.logging_steps),
+                        str((lm_tr_loss - lm_logging_loss) / args.logging_steps),
+                        str(eval_loss),
                         str(global_step),
                     )
                     logging_loss = tr_loss
-                    if tr_loss/global_step < min_loss:
+                    con_logging_loss = con_tr_loss
+                    lm_logging_loss = lm_tr_loss
+                    if eval_loss < min_eval_loss or min_eval_loss==-1:
                         best_steps = global_step+0
-                        min_loss = tr_loss/global_step
+                        min_eval_loss = eval_loss
+                        if not os.path.exists(args.output_dir):
+                            os.makedirs(args.output_dir)
+                        with open(os.path.join(args.output_dir, "best_steps.txt"),'w') as f:
+                            f.write('best step at:' + str(best_steps)+'\n')
+                            f.write('eval_loss:' + str(eval_loss))
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
                     # Save model checkpoint
                     output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    model_to_save = model.module.bert if hasattr(model, "module") else model.bert
+                    model_to_save = model.module.roberta if hasattr(model, "module") else model.roberta
                     model_to_save.save_pretrained(output_dir)
                     tokenizer.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
@@ -404,7 +408,38 @@ def pretrain(args, train_dataset, model, tokenizer):
     #if args.local_rank in [-1, 0]:
         #tb_writer.close()
 
-    return global_step, tr_loss / global_step, best_steps, min_loss
+    return global_step, tr_loss / global_step, best_steps, min_eval_loss
+
+def pretrain_evaluate(args, eval_dataset, model, tokenizer, prefix="", test=False):
+
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+    eval_sampler = SequentialSampler(eval_dataset)
+    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+
+    eval_loss = 0.0
+    step = 0
+    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+        model.eval()
+        batch = tuple(t.to(args.device) for t in batch)
+
+        with torch.no_grad():
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2]
+                if args.model_type in ["bert", "xlnet"]
+                else None,  # XLM don't use segment_ids
+                "trigger_mask": batch[3],
+                "arg_mask": batch[4],
+                "none_arg_mask": batch[5],
+                "none_arg_length_mask":batch[6],
+                'masked_lm_labels': batch[7],
+            }
+            outputs = model(**inputs)
+            eval_loss += (outputs[0] + outputs[1]).mean().item()
+        step+=1
+
+    return eval_loss/step
 
 
 def evaluate(args, model, tokenizer, prefix="", test=False):
@@ -513,7 +548,8 @@ def load_and_cache_contrast_examples(args, task, tokenizer):
     )
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading contrast features from cached file %s", cached_features_file)
-        contrast_features = torch.load(cached_features_file)
+        train_contrast_features = torch.load(cached_features_file)
+        test_contrast_features = torch.load(cached_features_file+'_test')
     else:
         logger.info("Creating contrast features from dataset file at %s", args.data_dir)
 
@@ -528,24 +564,43 @@ def load_and_cache_contrast_examples(args, task, tokenizer):
             pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
         )
 
+        feature_len = int(len(contrast_features) / 10 * 8)
+
+        train_contrast_features = contrast_features[:feature_len]
+        test_contrast_features = contrast_features[feature_len:]
+
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
-            torch.save(contrast_features, cached_features_file)
+            torch.save(train_contrast_features, cached_features_file)
+            torch.save(test_contrast_features, cached_features_file+"_test")
 
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Convert to Tensors and build dataset
-    all_input_ids = torch.tensor([f.input_ids for f in contrast_features], dtype=torch.long)
-    all_input_mask = torch.tensor([f.input_mask for f in contrast_features], dtype=torch.long)
-    all_segment_ids = torch.tensor([f.segment_ids for f in contrast_features], dtype=torch.long)
-    all_trigger_mask = torch.tensor([f.trigger_mask for f in contrast_features], dtype=torch.float)
-    all_arg_mask = torch.tensor([f.arg_mask for f in contrast_features], dtype=torch.float)
-    all_none_arg_mask = torch.tensor([f.none_arg_mask for f in contrast_features], dtype=torch.float)
-    all_none_arg_length_mask = torch.tensor([f.none_arg_length_mask for f in contrast_features], dtype=torch.float)
+    all_input_ids = torch.tensor([f.input_ids for f in train_contrast_features], dtype=torch.long)
+    all_input_mask = torch.tensor([f.input_mask for f in train_contrast_features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in train_contrast_features], dtype=torch.long)
+    all_trigger_mask = torch.tensor([f.trigger_mask for f in train_contrast_features], dtype=torch.float)
+    all_arg_mask = torch.tensor([f.arg_mask for f in train_contrast_features], dtype=torch.float)
+    all_none_arg_mask = torch.tensor([f.none_arg_mask for f in train_contrast_features], dtype=torch.float)
+    all_none_arg_length_mask = torch.tensor([f.none_arg_length_mask for f in train_contrast_features], dtype=torch.float)
+    all_lm_masked_labels = torch.tensor([f.lm_masked_labels for f in train_contrast_features], dtype=torch.long)
 
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_trigger_mask, all_arg_mask, all_none_arg_mask, all_none_arg_length_mask)
-    return dataset
+    train_dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_trigger_mask, all_arg_mask, all_none_arg_mask, all_none_arg_length_mask,all_lm_masked_labels)
+    
+    all_input_ids = torch.tensor([f.input_ids for f in test_contrast_features], dtype=torch.long)
+    all_input_mask = torch.tensor([f.input_mask for f in test_contrast_features], dtype=torch.long)
+    all_segment_ids = torch.tensor([f.segment_ids for f in test_contrast_features], dtype=torch.long)
+    all_trigger_mask = torch.tensor([f.trigger_mask for f in test_contrast_features], dtype=torch.float)
+    all_arg_mask = torch.tensor([f.arg_mask for f in test_contrast_features], dtype=torch.float)
+    all_none_arg_mask = torch.tensor([f.none_arg_mask for f in test_contrast_features], dtype=torch.float)
+    all_none_arg_length_mask = torch.tensor([f.none_arg_length_mask for f in test_contrast_features], dtype=torch.float)
+    all_lm_masked_labels = torch.tensor([f.lm_masked_labels for f in test_contrast_features], dtype=torch.long)
+
+    test_dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_trigger_mask, all_arg_mask, all_none_arg_mask, all_none_arg_length_mask,all_lm_masked_labels)
+    
+    return train_dataset,test_dataset
 
 def load_and_cache_examples(args, task, tokenizer, evaluate=False, test=False):
     if args.local_rank not in [-1, 0]:
@@ -790,7 +845,7 @@ def main():
     """
 
     assert os.path.exists(args.data_dir), ValueError('data_dir does not exist!')
-    assert args.task_name in ['ace','maven'], ValueError('task_name is not supported, please use ace or maven')
+    assert args.task_name=='ace', ValueError('task_name is not supported, please use ace')
     check_suffix = 'json' if args.task_name=='ace' else 'jsonl'
     assert 'train.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('train file does not exist!')
     assert 'dev.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('dev file does not exist!')
@@ -904,8 +959,8 @@ def main():
 
     if args.do_pretrain:
         print("--do pretrain--")
-        pretrain_dataset = load_and_cache_contrast_examples(args, args.task_name, tokenizer)
-        global_step, tr_loss ,best_steps, min_loss = pretrain(args, pretrain_dataset, model, tokenizer)
+        pretrain_dataset, pretrain_dataset_test = load_and_cache_contrast_examples(args, args.task_name, tokenizer)
+        global_step, tr_loss ,best_steps, min_loss = pretrain(args, pretrain_dataset, model, tokenizer,pretrain_dataset_test)
         logger.info(" contrast_global_step = %s, contrast_average loss = %s, best_steps = %s, min_loss = %s", global_step, tr_loss, best_steps, min_loss)
         return
 

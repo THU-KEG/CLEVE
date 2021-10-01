@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
-from transformers import BertPreTrainedModel,BertModel,RobertaModel, PreTrainedModel
+from transformers import BertPreTrainedModel,BertModel,RobertaModel, PreTrainedModel,RobertaForMaskedLM
 
 import numpy as np
 import torch
@@ -117,7 +117,6 @@ class DMBERT(BertPreTrainedModel):
         return outputs
 
 
-
 class DMRoBERTa(BertPreTrainedModel):
     def __init__(self,config,bert):
         super().__init__(config)
@@ -160,14 +159,14 @@ class DMRoBERTa(BertPreTrainedModel):
             outputs=(loss,)+outputs
         return outputs
 
-class RoBERTaContrastive(BertPreTrainedModel):
+class RoBERTaContrastive(RobertaForMaskedLM):
     def __init__(self,config,bert):
         super().__init__(config)
-        self.bert = bert
+        self.roberta = bert
         self.linear = nn.Linear(config.hidden_size,config.hidden_size)
         self.W = nn.Linear(config.hidden_size,config.hidden_size)
-    def forward(self,input_ids=None,attention_mask=None,token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None,trigger_mask=None,arg_mask=None,none_arg_mask=None,none_arg_length_mask=None):
-        outputs =self.bert(                 # [bs, length, emd] 
+    def forward(self,input_ids=None,attention_mask=None,token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None,trigger_mask=None,arg_mask=None,none_arg_mask=None,none_arg_length_mask=None, masked_lm_labels = None):
+        outputs =self.roberta(                 # [bs, length, emd] 
             input_ids,                      # [batch,length]
             attention_mask=attention_mask,  # padding
             token_type_ids=token_type_ids,  # sentence segmentation
@@ -181,7 +180,8 @@ class RoBERTaContrastive(BertPreTrainedModel):
         trigger_reps = torch.sum(trigger_reps,dim=1)                            #[bs, emd]
         assert torch.sum(torch.isnan(trigger_reps))==0
         trigger_reps = trigger_reps/torch.sum(trigger_mask,dim=1)               #[bs, emd]
-        trigger_reps = self.linear(trigger_reps)
+        # trigger_reps = self.linear(trigger_reps)
+        trigger_reps = self.W(trigger_reps)
         trigger_reps = trigger_reps/(torch.norm(trigger_reps,dim=1,keepdim=True)+1e-8)
 
         assert torch.sum(torch.isnan(trigger_reps))==0
@@ -200,6 +200,7 @@ class RoBERTaContrastive(BertPreTrainedModel):
         none_arg_reps = outputs_un * none_arg_mask            #[bs, max_contras_ent, length, emd]
         none_arg_reps = torch.sum(none_arg_reps,dim=2)        #[bs, max_contras_ent, emd]
         none_arg_reps = none_arg_reps/(torch.sum(none_arg_mask,dim=2)+1e-8) #[bs, max_contras_ent, emd]
+        none_arg_reps = self.linear(none_arg_reps)
         none_arg_reps = none_arg_reps/(torch.norm(none_arg_reps,dim=2,keepdim=True)+1e-8)
 
         assert torch.sum(torch.isnan(trigger_reps))==0
@@ -221,4 +222,18 @@ class RoBERTaContrastive(BertPreTrainedModel):
         loss = -pos_loss + torch.log(neg_loss_2+neg_loss_1+1e-8)
 
         loss = torch.mean(loss)
-        return (loss,)
+
+
+        lm_loss = super().forward(
+            input_ids,                      # [batch,length]
+            attention_mask=attention_mask,  # padding
+            token_type_ids=token_type_ids,  # sentence segmentation
+            position_ids=position_ids,      # position emebedding
+            head_mask=head_mask,            # ？
+            inputs_embeds=inputs_embeds,    # lookup mat
+            masked_lm_labels = masked_lm_labels
+        )[0]
+
+        return (loss, 0.0 * lm_loss,)
+        # return (loss,)
+        # return (lm_loss,)

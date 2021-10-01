@@ -101,14 +101,13 @@ def process_to_pretrain(gs):
                 continue
             example['positive_edges'][k] = positive_nodes
             useful_nodes.extend(positive_nodes)
-            useful_nodes.append(k)
         useful_nodes = list(set(useful_nodes))
         for k in edges:
             try:
                 example['negative_edges'][k] = minus_list(useful_nodes,example['positive_edges'][k]+[k] + g.abandon_wordidx)
             except:
                 pass
-        if len(example['positive_edges'])!=0:
+        if len(example['positive_edges'])>1:
             examples.append(example)
 
     return examples
