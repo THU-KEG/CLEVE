@@ -595,7 +595,7 @@ def main():
     """
 
     assert os.path.exists(args.data_dir), ValueError('data_dir does not exist!')
-    assert args.task_name in ['ace'], ValueError('task_name is not supported, please use ace')
+    assert args.task_name in ['ace_eae'], ValueError('task_name is not supported, please use ace_eae')
     check_suffix = 'json'
     assert 'train.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('train file does not exist!')
     assert 'dev.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('dev file does not exist!')
