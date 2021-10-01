@@ -601,6 +601,7 @@ def main():
     assert 'dev.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('dev file does not exist!')
     assert 'test.{}'.format(check_suffix) in os.listdir(args.data_dir), ValueError('test file does not exist!')
     assert 'pred.json' in os.listdir(args.data_dir), ValueError('pred.json file does not exist!')
+    assert args.model_type=='roberta', ValueError('model_type should be roberta')
 
     assert os.path.exists(args.model_name_or_path), ValueError('Model path does not exists!')
     check_model_files = os.listdir(args.model_name_or_path)
