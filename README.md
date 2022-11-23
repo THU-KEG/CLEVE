@@ -284,6 +284,8 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python run_ee.py \
 The parameters are similar with the event detection part.
 
 
+## Structure Pre-training
+Please see the ```struct``` folder.
 
 ## Citation
 
