@@ -10,7 +10,7 @@ Same as [GCC](https://github.com/THUDM/GCC). Please ensure you can run pre-train
 * Follow the README in the main folder and get ```[nyt_parsed_file]```.
 * Put ```glove.6B.300d.txt``` to this folder.
 * Convert AMR file to the DGL format ```python load_AMR.py --amr_file [nyt_parsed_file]```, and the converted file will in ```GCC/data```
-* Pre-training: ```bash scripts/pretrain.sh <gpu> --moco --nce-k 1800```
+* Go to ```GCC``` folder, and run pre-training: ```bash scripts/pretrain.sh <gpu> --moco --nce-k 1800```
 
 > You may want to adjust parameters based on the concrete data. For example, the ```nce-k``` parameter is the queue size of MoCo, which need to be small compared to the **data size**, but in the meanwhile be as large as possible to maintain a good contrastive training performance. 6% is a good portion, so if you have 30,000 data, nec-k could be 1800. Reasons can be found [here](https://github.com/facebookresearch/moco/issues/24#issuecomment-631233654). ```rw-hops``` controls the size of subgraphs, which should be small compared to the average **graph size**.
 
