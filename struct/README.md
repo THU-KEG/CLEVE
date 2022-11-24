@@ -12,7 +12,7 @@ Same as [GCC](https://github.com/THUDM/GCC). Please ensure you can run pre-train
 * Convert AMR file to the DGL format ```python load_AMR.py --amr_file [nyt_parsed_file]```, and the converted file will in ```GCC/data```
 * Pre-training: ```bash scripts/pretrain.sh <gpu> --moco --nce-k 1800```
 
-> You may want to adjust parameters based on the concrete data. For example, the ```nce-k``` parameter is the queue size of MoCo, which need to be small compared to the **data size**, but in the meanwhile be as large as possible to maintain a good contrastive training performance. 6% is a good portion, so if you have 30,000 data, nec-k could be 1800. Reasons can be found [here](https://github.com/facebookresearch/moco/issues/24#issuecomment-631233654). ```rw-hops``` controls the size of subgraphs, which should be small compared to the average graph size.
+> You may want to adjust parameters based on the concrete data. For example, the ```nce-k``` parameter is the queue size of MoCo, which need to be small compared to the **data size**, but in the meanwhile be as large as possible to maintain a good contrastive training performance. 6% is a good portion, so if you have 30,000 data, nec-k could be 1800. Reasons can be found [here](https://github.com/facebookresearch/moco/issues/24#issuecomment-631233654). ```rw-hops``` controls the size of subgraphs, which should be small compared to the average **graph size**.
 
 ## Down-stream Usage
 Dumped parameters can be loaded into the model ```GCC/gcc/models/graph_encoder.py```. The output ```x``` is graph representations, ```node_reps``` is node representations. The pre-trained model can be used to AMR-knowledge-related tasks. More details for down-stream usage can be found in [GCC](https://github.com/THUDM/GCC).
