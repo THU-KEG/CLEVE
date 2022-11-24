@@ -87,7 +87,7 @@ def parse_option():
     parser.add_argument("--nce-t", type=float, default=0.07)
 
     # random walk
-    parser.add_argument("--rw-hops", type=int, default=6)
+    parser.add_argument("--rw-hops", type=int, default=3)
     parser.add_argument("--subgraph-size", type=int, default=128)
     parser.add_argument("--restart-prob", type=float, default=0.8)
     parser.add_argument("--hidden-size", type=int, default=300)
