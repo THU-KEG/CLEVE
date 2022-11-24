@@ -20,7 +20,9 @@ Dumped parameters can be loaded into the model ```GCC/gcc/models/graph_encoder.p
 ## Main difference between the GCC and this codebase
 * Our input files contain more information. Our DGL file contains token semantic information and edge type information. Core codes: ```load_AMR.py```.
 * Nodes initialization and edges initialiazation. We add semantic embedding (glove embedding) for node features initialization. We also use random initialization based on edge types to initialize edge features. Original GCC codebase ignores the semantic meaning of nodes, and does not implement edge features. Core codes: ```GCC/gcc/models/graph_encoder.py, GCC/train.py```. 
+
 > Note 1: Glove embeddings can be replaced by contextual representations such as BERT and RoBERTa.
+
 > Note 2: Models in the codebase (e.g., GIN) may not use edge features. However, we implement edge features in case other models may need them.
   
 ## Cite
