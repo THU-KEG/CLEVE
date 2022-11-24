@@ -130,4 +130,3 @@ dmypy.json
 
 **/.DS_Store
 __pycache__/
-*.sh
